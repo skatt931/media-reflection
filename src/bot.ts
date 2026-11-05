@@ -34,7 +34,7 @@ const dialogMenu = {
   keyboard: [["Скасувати"], ["Бібліотека", "Запитати", "Експорт"]],
   resize_keyboard: true,
 };
-const icons: Record<string, string> = { positive: "👍", mixed: "😐", negative: "👎" };
+const icons: Record<string, string> = { loved: "❤️", positive: "👍", mixed: "😐", negative: "👎" };
 const button = (text: string, callback_data: string) => ({ text, callback_data });
 const short = (text: string, max = 80) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
 const pairs = <T>(list: T[]) => {
@@ -53,9 +53,22 @@ function reactionRow(s: Store, id: string) {
 const actions = (s: Store, id: string) => ({
   inline_keyboard: [
     reactionRow(s, id),
-    [button("Додати думку", `reflect:${id}`), button("Змінити", `details:${id}`)],
+    [
+      button("Додати думку", `reflect:${id}`),
+      button(s.item(id)?.status === "saved" ? "На потім ✓" : "На потім", `later:${id}`),
+      button("Змінити", `details:${id}`),
+    ],
   ],
 });
+// A comment that only says "later" sends the link to «На потім» instead of becoming a thought.
+const laterWords = new Set(["потім", "на потім", "later", "🔖"]);
+const isLater = (text: string) =>
+  laterWords.has(
+    text
+      .trim()
+      .toLocaleLowerCase("uk")
+      .replace(/[.!…]+$/u, ""),
+  );
 const dateChoices = (id: string) => ({
   inline_keyboard: [
     [button("Сьогодні", `date:today:${id}`), button("Вчора", `date:yesterday:${id}`)],
@@ -87,7 +100,8 @@ function card(s: Store, id: string) {
     [types[i.type] ?? i.type, statuses[i.status] ?? i.status, icons[i.reaction]].filter(Boolean).join(" · "),
   );
   if (i.creator) lines.push(`Автор: ${i.creator}`);
-  lines.push(`Коли: ${i.consumed_on ?? "—"}${i.date_source === "capture" ? " (день надсилання)" : ""}`);
+  if (i.type !== "resource" || i.consumed_on)
+    lines.push(`Коли: ${i.consumed_on ?? "—"}${i.date_source === "capture" ? " (день надсилання)" : ""}`);
   if (i.tags.length) lines.push(`Теми: ${i.tags.join(", ")}`);
   if (i.description && i.description !== i.title) lines.push("", short(i.description, 300));
   if (notes.length) lines.push("", "Мої враження:", ...notes.slice(-3).map((n) => "• " + n.body));
@@ -369,7 +383,11 @@ export async function handle(
 
   async function capture(text: string, update = u.update_id, capturedAt = at, note = true) {
     s.setContext(null);
-    const id = await loadMetadata(s.capture(update, text, capturedAt, note));
+    const found = findUrl(text);
+    const later = Boolean(found) && isLater(text.replace(found!, ""));
+    const first = s.capture(update, text, capturedAt, note && !later);
+    if (later) s.edit(first, { status: "saved", consumed_on: null });
+    const id = await loadMetadata(first);
     const hasNote = s.reflections(id).some((r) => r.update_id === update);
     const suggestion = await analyze(id, text, { question: hasNote, evidence: evidenceFor(id, text) });
     await show(id);
@@ -445,15 +463,19 @@ export async function handle(
     }
   }
 
-  // The item a short comment belongs to: the last capture, if it was a bare link sent moments ago.
-  function attachTarget(text: string) {
-    if (text.includes("\n") || text.length > 80) return null;
+  // The link saved moments ago, if any.
+  function recentLink() {
     const last = s.lastCapture();
     if (!last) return null;
     const age = at.getTime() - Date.parse(last.created_at);
     const item = s.item(last.item_id);
-    if (!item?.url || age < 0 || age > ATTACH_WINDOW || s.reflections(item.id).length) return null;
-    return item;
+    return item?.url && age >= 0 && age <= ATTACH_WINDOW ? item : null;
+  }
+  // The item a short comment belongs to: the last capture, if it was a bare link sent moments ago.
+  function attachTarget(text: string) {
+    if (text.includes("\n") || text.length > 80) return null;
+    const item = recentLink();
+    return item && !s.reflections(item.id).length ? item : null;
   }
 
   async function onText(text: string) {
@@ -465,7 +487,16 @@ export async function handle(
     else if (replyTo) await send("Не знаю, до якого запису це. Натисни «Додати думку» під карткою.", menu);
     else if (active?.mode === "edit") await applyEdit(text);
     else if (findUrl(text)) await capture(text);
-    else if (active?.mode === "reflection") await remember(active.id, text, active.followup);
+    else if (isLater(text)) {
+      const item = recentLink();
+      s.setContext(null);
+      if (!item)
+        await send("«Потім» працює разом із посиланням: у тому ж повідомленні або одразу після нього.", menu);
+      else {
+        s.edit(item.id, { status: "saved", consumed_on: null });
+        await send(`На потім: ${short(item.title)}`, menu);
+      }
+    } else if (active?.mode === "reflection") await remember(active.id, text, active.followup);
     else if (active?.mode === "ask") await ask(text, active);
     else if (/^(чи |які |що (я |мені|з |про)|знайди |покажи |а тільки )/iu.test(text))
       await ask(text, active);
@@ -521,7 +552,8 @@ export async function handle(
     } else if (["/start", "/help"].includes(cmd)) {
       s.setContext(null);
       await send(
-        "Надішли посилання, текст або голосове — збережу й додам теги. Нові записи позначаю «Ознайомився».\n\n" +
+        "Надішли посилання, текст або голосове — збережу й додам теги. Нові записи позначаю «Ознайомився».\n" +
+          "Додай «потім» до посилання — і воно піде в «На потім».\n\n" +
           "Бібліотека — останні, на потім, без вражень\n" +
           "Запитати — пошук по збереженому\n" +
           "Експорт — оновити Медіатеку в Obsidian\n" +
@@ -623,6 +655,17 @@ export async function handle(
       case "details":
         await keyboardOnly(id, detailButtons(id));
         return;
+      case "later": {
+        const item = s.item(id)!;
+        if (item.status !== "saved") s.edit(id, { status: "saved", consumed_on: null });
+        else
+          s.edit(
+            id,
+            item.type === "resource" ? { status: null } : { status: "consumed", consumed_on: localDate() },
+          );
+        await show(id, undefined, here);
+        return;
+      }
       case "back":
         await keyboardOnly(id, main(id));
         return;

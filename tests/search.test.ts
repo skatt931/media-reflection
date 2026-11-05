@@ -24,6 +24,38 @@ test("expanded names and filters find actual media; ranking respects own reactio
   );
   s.close();
 });
+test("❤️ counts as liked in filters and ranks above 👍", () => {
+  const s = new Store(":memory:");
+  const good = s.capture(1, "Відьмак добре");
+  const loved = s.capture(2, "Відьмак найкраще");
+  const meh = s.capture(3, "Відьмак так собі");
+  s.edit(good, { reaction: "positive" });
+  s.edit(loved, { reaction: "loved" });
+  s.edit(meh, { reaction: "mixed" });
+  const plan = {
+    terms: ["Відьмак"],
+    types: [],
+    reaction: null,
+    status: null,
+    from: null,
+    to: null,
+    best: true,
+    limit: 5,
+  };
+  assert.deepEqual(
+    retrieve(s, plan).map((i) => i.id),
+    [loved, good, meh],
+  );
+  assert.deepEqual(
+    retrieve(s, { ...plan, reaction: "positive" }).map((i) => i.id),
+    [loved, good],
+  );
+  assert.deepEqual(
+    retrieve(s, { ...plan, reaction: "loved" }).map((i) => i.id),
+    [loved],
+  );
+  s.close();
+});
 test("natural search uses prior query, limits snippets and rejects invented references", async () => {
   const s = new Store(":memory:");
   const id = s.capture(1, "Відьмак");

@@ -9,6 +9,7 @@ export const types: Record<string, string> = {
   article: "Стаття",
   book: "Книга",
   social_post: "Допис",
+  resource: "Ресурс",
   other: "Інше",
   unknown: "Невідомо",
 };
@@ -19,10 +20,13 @@ export const statuses: Record<string, string> = {
   finished: "Завершено",
 };
 export const reactions: Record<string, string> = {
+  loved: "Улюблене",
   positive: "Сподобалось",
   mixed: "Змішані враження",
   negative: "Не сподобалось",
 };
+// ❤️ is a stronger 👍: everything that counts likes counts both.
+export const liked = (reaction: unknown) => reaction === "positive" || reaction === "loved";
 export const fields: Record<string, string> = {
   title: "Назва",
   creator: "Автор / виконавець",

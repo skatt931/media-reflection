@@ -1,5 +1,5 @@
 import { Store } from "./store.ts";
-import { localDate, localTime, types } from "./fields.ts";
+import { localDate, localTime, types, liked } from "./fields.ts";
 
 // Month and year in review. Everything is computed locally from SQLite; nothing is sent anywhere.
 // A period is "2026-11" (month) or "2026" (year), in the local TIMEZONE.
@@ -114,13 +114,21 @@ export function review(
     slides.push({ heading: "Що зберіг", lines });
   }
 
+  // Favourites: everything marked ❤️ in the period.
+  const loved = items.filter((i) => i.reaction === "loved");
+  if (loved.length)
+    slides.push({ heading: "Улюблене ❤️", lines: loved.slice(0, 10).map((i) => `• ${name(i)}`) });
+
   // 2. What you liked, and which types tend to work for you.
   {
     const reacted = items.filter((i) => i.reaction);
     const lines: string[] = [];
     if (reacted.length) {
       const r = count(reacted.map((i) => i.reaction));
-      lines.push(`👍 ${r.get("positive") ?? 0} · 😐 ${r.get("mixed") ?? 0} · 👎 ${r.get("negative") ?? 0}`);
+      lines.push(
+        (loved.length ? `❤️ ${loved.length} · ` : "") +
+          `👍 ${r.get("positive") ?? 0} · 😐 ${r.get("mixed") ?? 0} · 👎 ${r.get("negative") ?? 0}`,
+      );
       const best = items
         .filter((i) => i.reaction === "positive")
         .sort((a, b) => (notesPer.get(b.id) ?? 0) - (notesPer.get(a.id) ?? 0))
@@ -132,8 +140,8 @@ export function review(
     const taste = [...count(history.map((i) => typeLabel(i.type)))]
       .filter(([, n]) => n >= 3)
       .map(([type, n]) => {
-        const liked = history.filter((i) => typeLabel(i.type) === type && i.reaction === "positive").length;
-        return { type, n, liked, share: liked / n };
+        const likes = history.filter((i) => typeLabel(i.type) === type && liked(i.reaction)).length;
+        return { type, n, liked: likes, share: likes / n };
       })
       .sort((a, b) => b.share - a.share);
     if (taste.length >= 2) {
@@ -188,8 +196,9 @@ export function review(
       );
       lines.push(`Найчастіше зберігаєш ${weekdays[days[0][0]]}, ${parts[0][0]}`);
     }
-    const withNote = items.filter((i) => notesPer.has(i.id) || i.reaction).length;
-    lines.push(`Думок: ${notesIn.length} · з враженням ${withNote} з ${items.length}`);
+    const seen = items.filter((i) => i.type !== "resource" && i.status !== "saved");
+    const withNote = seen.filter((i) => notesPer.has(i.id) || i.reaction).length;
+    lines.push(`Думок: ${notesIn.length} · з враженням ${withNote} з ${seen.length}`);
     const [most] = top(notesPer, 1, 2);
     if (most && byId.has(most[0])) lines.push(`Найбільше написав про ${name(byId.get(most[0])!)}`);
     const repeats = top(count(captures.map((c) => c.item_id as string)), 3, 2).filter(([id]) =>

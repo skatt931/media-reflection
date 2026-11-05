@@ -70,7 +70,7 @@ tags:
 
 Draft вище — історичний; актуальна схема:
 
-- `items`: id, url (UNIQUE, без tracking-параметрів), title, type, created_at, `details` JSON — source, creator, status (saved / in_progress / consumed / finished), consumed_on + date_source (capture / user), reaction (positive / mixed / negative / null), tags, entities, summary (AI), description / site / image_url / cover / photo_file_id (зі сторінки), manual_fields (AI не чіпає), metadata_fields (назва/автор зі сторінки), metadata_loaded, ai_done, snooze_until.
+- `items`: id, url (UNIQUE, без tracking-параметрів), title, type, created_at, `details` JSON — source, creator, status (saved / in_progress / consumed / finished; null у ресурсу), consumed_on + date_source (capture / user), reaction (positive / mixed / negative / null), tags, entities, summary (AI), description / site / image_url / cover / photo_file_id (зі сторінки), manual_fields (AI не чіпає), metadata_fields (назва/автор зі сторінки), metadata_loaded, ai_done, snooze_until.
 - `captures` і `reflections` — по одному рядку на Telegram update; багато на один item.
 - `enrichment` — сирі AI-відповіді за update, окремо від власних вражень.
 - `prompts` — повідомлення бота → item (для Reply) і стан рефлексії (pending / answered / skipped).

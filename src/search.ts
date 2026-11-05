@@ -1,5 +1,5 @@
 import { Store } from "./store.ts";
-import { types, statuses, reactions, validDate, localDate } from "./fields.ts";
+import { types, statuses, reactions, liked, validDate, localDate } from "./fields.ts";
 import type { JSONRequest } from "./groq.ts";
 export type SearchPlan = {
   terms: string[];
@@ -64,16 +64,20 @@ export function retrieve(s: Store, plan: SearchPlan) {
       const match =
         (!plan.terms.length || score > 0) &&
         (!plan.types.length || plan.types.includes(item.type)) &&
-        (!plan.reaction || item.reaction === plan.reaction) &&
+        (!plan.reaction ||
+          item.reaction === plan.reaction ||
+          (plan.reaction === "positive" && liked(item.reaction))) &&
         (!plan.status || item.status === plan.status) &&
         (!plan.from || date >= plan.from) &&
         (!plan.to || date <= plan.to);
       const preference = plan.best
-        ? item.reaction === "positive"
-          ? 2
-          : item.reaction === "negative"
-            ? -1
-            : 0
+        ? item.reaction === "loved"
+          ? 3
+          : item.reaction === "positive"
+            ? 2
+            : item.reaction === "negative"
+              ? -1
+              : 0
         : 0;
       return { item, match, score: score + preference * 100 };
     })
@@ -90,7 +94,7 @@ export function createSearch(s: Store, request?: JSONRequest): Ask {
     try {
       value = await request?.(
         "library_query",
-        "Перетвори запит до ОСОБИСТОЇ збереженої медіатеки на фільтри. Не шукай в інтернеті. Врахуй попередні запитання й previous для фраз «а тільки відео», «які з них сподобалися». terms — до 8 альтернативних слів/фраз/синонімів/назв (напр. Відьмак і Witcher), між ними OR. Не включай загальні слова «контент», «інформація», «найкращий», «відео», якщо вони вже виражені фільтром. Якщо лише метадані — terms порожні. КРИТИЧНО: «чи зберігав», «збережене» стосуються всієї бібліотеки, НЕ status=saved. saved означає лише явно «на потім». Не вгадуй тип зі знання про назву: Witcher може бути відео, статтею чи грою. Коли тип не обмежено, types=[] (НЕ unknown). from/to — дати YYYY-MM-DD або null. best=true тільки для запиту кращих; не вигадуй оцінку. limit від 1 до 10.",
+        "Перетвори запит до ОСОБИСТОЇ збереженої медіатеки на фільтри. Не шукай в інтернеті. Врахуй попередні запитання й previous для фраз «а тільки відео», «які з них сподобалися». terms — до 8 альтернативних слів/фраз/синонімів/назв (напр. Відьмак і Witcher), між ними OR. Не включай загальні слова «контент», «інформація», «найкращий», «відео», якщо вони вже виражені фільтром. Якщо лише метадані — terms порожні. КРИТИЧНО: «чи зберігав», «збережене» стосуються всієї бібліотеки, НЕ status=saved. saved означає лише явно «на потім». Не вгадуй тип зі знання про назву: Witcher може бути відео, статтею чи грою. Коли тип не обмежено, types=[] (НЕ unknown). from/to — дати YYYY-MM-DD або null. best=true тільки для запиту кращих; не вигадуй оцінку. reaction: positive — «сподобалось» (включає улюблене), loved — лише «улюблене», «❤️». limit від 1 до 10.",
         {
           query: bounded,
           history: recent,

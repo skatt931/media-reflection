@@ -46,7 +46,7 @@ test("a reply to the pager adds a note to the shown item; outsiders and groups c
     sent.push({ t, k, id: ++n });
     return n;
   };
-  await handle(s, message(1, "https://example.com"), 42, send);
+  await handle(s, message(1, "https://example.com/page"), 42, send);
   await handle(s, message(2, "/reflect"), 42, send);
   const prompt = sent.find((x) => x.t.startsWith("Без вражень · 1/1"));
   assert.ok(prompt);
@@ -109,7 +109,7 @@ test("malformed URL is captured without breaking ingestion; unrelated reply crea
 });
 test("failed confirmation retries without duplicate capture or initial reflection", async () => {
   const s = new Store(":memory:");
-  const u = message(1, "https://example.com думка");
+  const u = message(1, "https://example.com/page думка");
   await assert.rejects(
     handle(s, u, 42, async () => {
       throw new Error("offline");

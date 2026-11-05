@@ -27,7 +27,7 @@ function harness() {
 }
 test("buttons update status, explicit date, reaction and metadata without AI", async () => {
   const { s, out, send } = harness();
-  await handle(s, msg(1, "https://example.com"), 42, send);
+  await handle(s, msg(1, "https://example.com/page"), 42, send);
   const item = s.items()[0];
   await handle(s, cb(2, `status:finished:${item.id}`, out[0].id), 42, send);
   assert.equal(s.item(item.id)!.status, "finished");
@@ -52,7 +52,7 @@ test("active reflection accepts plain text, one AI followup, categorization appl
     calls++;
     return { question: "Що саме зачепило?", tags: ["атмосфера"], type: "article" };
   };
-  await handle(s, msg(1, "https://example.com"), 42, send);
+  await handle(s, msg(1, "https://example.com/page"), 42, send);
   const id = s.items()[0].id;
   await handle(s, cb(2, `reflect:${id}`, out[0].id), 42, send, ai);
   await handle(s, msg(3, "Сподобався стиль"), 42, send, ai);
@@ -68,7 +68,7 @@ test("active reflection accepts plain text, one AI followup, categorization appl
 });
 test("AI outage leaves original reflection intact and bot usable", async () => {
   const { s, out, send } = harness();
-  await handle(s, msg(1, "https://example.com"), 42, send);
+  await handle(s, msg(1, "https://example.com/page"), 42, send);
   const id = s.items()[0].id;
   await handle(s, cb(2, `reflect:${id}`, out[0].id), 42, send);
   await handle(s, msg(3, "Мій текст"), 42, send, async () => {

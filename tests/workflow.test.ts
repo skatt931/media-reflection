@@ -8,12 +8,12 @@ const msg = (id: number, text: string) => ({
 });
 test("new capture defaults consumed, repeated media retains status and history", () => {
   const s = new Store(":memory:");
-  const id = s.capture(1, "https://example.com", new Date("2026-11-03T20:00:00Z"));
+  const id = s.capture(1, "https://example.com/page", new Date("2026-11-03T20:00:00Z"));
   assert.equal(s.item(id)!.status, "consumed");
   assert.equal(s.item(id)!.consumed_on, "2026-11-03");
   assert.equal(s.item(id)!.date_source, "capture");
   s.edit(id, { status: "saved", consumed_on: null });
-  assert.equal(s.capture(2, "https://example.com ще одна думка"), id);
+  assert.equal(s.capture(2, "https://example.com/page ще одна думка"), id);
   assert.equal(s.item(id)!.status, "saved");
   assert.equal(s.snapshot().captures.length, 2);
   s.close();
@@ -65,7 +65,7 @@ test("capture categorizes automatically and presents only two inline actions", a
       .at(-1)
       .k.inline_keyboard.flat()
       .map((b: any) => b.callback_data.split(":")[0]),
-    ["reaction", "reaction", "reaction", "reflect", "details"],
+    ["reaction", "reaction", "reaction", "reaction", "reflect", "later", "details"],
   );
   assert.ok(!JSON.stringify(out).includes("accept:"));
   s.close();

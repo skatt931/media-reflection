@@ -28,7 +28,7 @@ function fixture() {
 test("incremental export preserves personal section and stable path as title changes", () => {
   const f = fixture();
   try {
-    const id = f.s.capture(1, "https://example.com");
+    const id = f.s.capture(1, "https://example.com/page");
     f.s.edit(id, { title: "Читабельна назва" });
     const first = exportVault(f.s, f.root);
     assert.equal(first.created, 1);

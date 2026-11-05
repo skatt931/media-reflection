@@ -102,6 +102,7 @@ export class Store {
         type,
         row.id,
       );
+      this.fitStatusToType(row.id);
     }
     // Earlier versions fed "Автор: невідомий" to the AI, which then saved it as the author.
     for (const row of this.all("SELECT id FROM items WHERE details LIKE '%невідомий%'")) {
@@ -194,6 +195,7 @@ export class Store {
       manual_fields: [...locked],
       ...(Object.hasOwn(patch, "consumed_on") ? { date_source: patch.consumed_on ? "user" : null } : {}),
     });
+    if (Object.hasOwn(patch, "type")) this.fitStatusToType(id);
   }
   applyAI(id: string, value: Suggestion | null) {
     const item = this.item(id);
@@ -211,6 +213,7 @@ export class Store {
     if (value.title && !locked.has("title") && !fromPage.has("title")) patch.title = value.title;
     if (value.creator && !locked.has("creator") && !fromPage.has("creator")) patch.creator = value.creator;
     this.patch(id, patch);
+    this.fitStatusToType(id);
   }
   // Returns the id that holds the item afterwards: a fresh capture of a page that
   // is already saved under another URL (e.g. a Threads /share/ link) is merged into it.
@@ -316,7 +319,11 @@ export class Store {
         url ?? raw.slice(0, 160),
         typeFromUrl(url),
         now,
-        JSON.stringify({ status: "consumed", consumed_on: localDate(capturedAt), date_source: "capture" }),
+        JSON.stringify(
+          typeFromUrl(url) === "resource"
+            ? { status: null }
+            : { status: "consumed", consumed_on: localDate(capturedAt), date_source: "capture" },
+        ),
       );
       this.run("INSERT INTO captures VALUES (?,?,?,?)", update, id, raw, now);
       const text = note && url && found ? raw.replace(found, "").trim() : "";
@@ -324,13 +331,30 @@ export class Store {
     });
     return id as string;
   }
-  // Items without any reflection that were not skipped and are not snoozed.
+  // A resource (a site kept for reuse) is not something you "watched on a date": it has no
+  // status of its own. The automatic «Ознайомився» + save date is dropped or restored when
+  // the type changes; anything the user set by hand stays.
+  fitStatusToType(id: string) {
+    const i = this.item(id);
+    if (!i) return;
+    if (i.type === "resource" && i.status === "consumed" && i.date_source === "capture")
+      this.patch(id, { status: null, consumed_on: null, date_source: null });
+    else if (i.type !== "resource" && i.status === null)
+      this.patch(id, {
+        status: "consumed",
+        consumed_on: localDate(new Date(i.created_at)),
+        date_source: "capture",
+      });
+  }
+  // Things to reflect on: no reflection yet, not skipped or snoozed, already seen
+  // (not «На потім») and not a resource.
   unreflected(today = localDate()) {
     return this.all(
       `SELECT * FROM items i WHERE NOT EXISTS(SELECT 1 FROM reflections r WHERE r.item_id=i.id) AND NOT EXISTS(SELECT 1 FROM prompts p WHERE p.item_id=i.id AND p.state IN ('answered','skipped')) ORDER BY created_at,rowid`,
     )
       .map((r) => this.unpack(r))
-      .filter((i) => !i.snooze_until || i.snooze_until <= today);
+      .filter((i) => !i.snooze_until || i.snooze_until <= today)
+      .filter((i) => i.type !== "resource" && i.status !== "saved");
   }
   // The vault note is cleaned up by the next export (see exportVault).
   deleteItem(id: string) {

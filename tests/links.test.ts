@@ -29,7 +29,11 @@ test("known domains get a type without AI", () => {
   assert.equal(typeFromUrl("https://open.spotify.com/album/1"), "music_album");
   assert.equal(typeFromUrl("https://www.youtube.com/live/6vm"), "video");
   assert.equal(typeFromUrl("https://store.steampowered.com/app/1"), "game");
-  assert.equal(typeFromUrl("https://example.com"), "unknown");
+  assert.equal(typeFromUrl("https://example.com/post/1"), "unknown");
+  assert.equal(typeFromUrl("https://example.com"), "resource");
+  assert.equal(typeFromUrl("https://example.com/?ref=x"), "unknown");
+  assert.equal(typeFromUrl("https://dribbble.com/shots/1"), "resource");
+  assert.equal(typeFromUrl("https://www.figma.com/community/file/1"), "resource");
 });
 
 test("trailing punctuation is not part of a shared URL", () => {

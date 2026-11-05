@@ -98,6 +98,13 @@ test("card reactions toggle in place and take the item out of «Без враж�
   assert.equal(s.unreflected().length, 0);
   await handle(s, cb(3, `reaction:positive:${id}`, out[0].id), 42, send);
   assert.equal(s.item(id)!.reaction, null);
+  await handle(s, cb(4, `reaction:loved:${id}`, out[0].id), 42, send);
+  assert.equal(s.item(id)!.reaction, "loved");
+  assert.deepEqual(
+    out.at(-1)!.k.inline_keyboard[0].map((b: any) => b.text),
+    ["❤️ ✓", "👍", "😐", "👎"],
+  );
+  assert.match(out.at(-1)!.text, /· ❤️/);
 });
 
 test("lists are one message paged with arrows; actions keep the arrows", async () => {
@@ -143,7 +150,7 @@ test("lists are one message paged with arrows; actions keep the arrows", async (
 
 test("submenus edit the card instead of sending new messages", async () => {
   const { s, out, send } = harness();
-  await handle(s, msg(1, "https://example.com"), 42, send);
+  await handle(s, msg(1, "https://example.com/page"), 42, send);
   const id = s.items()[0].id;
   const card = out[0].id;
   await handle(s, cb(2, `details:${id}`, card), 42, send);
@@ -236,7 +243,7 @@ test("voice is transcribed once and then handled like text", async () => {
   const services = {
     transcribe: async () => {
       calls++;
-      return "https://example.com голосова думка";
+      return "https://example.com/page голосова думка";
     },
   };
   const voice = {
@@ -422,5 +429,79 @@ test("prune removes bookkeeping for finished updates only", async () => {
   assert.deepEqual(
     s.all("SELECT id FROM update_context").map((r) => r.id),
     [99],
+  );
+});
+
+test("a site's home page is a resource: no date, no status, never in «Без вражень»", async () => {
+  const { s, out, send } = harness();
+  await handle(s, msg(1, "https://www.awwwards.com/"), 42, send);
+  const id = s.items()[0].id;
+  const item = s.item(id)!;
+  assert.equal(item.type, "resource");
+  assert.equal(item.status, null);
+  assert.equal(item.consumed_on, null);
+  assert.ok(!out[0].text.includes("Коли:"));
+  assert.match(out[0].text, /^Ресурс$/m);
+  assert.equal(s.unreflected().length, 0);
+  // Changing the type back gives it the usual automatic status and save date.
+  await handle(s, cb(2, `settype:video:${id}`, out[0].id), 42, send);
+  assert.equal(s.item(id)!.status, "consumed");
+  assert.equal(s.unreflected().length, 1);
+});
+
+test("AI recognising a resource drops the automatic date but keeps a date set by hand", async () => {
+  const { s, send } = harness();
+  const ai = async () => ({ question: null, type: "resource", tags: ["дизайн"] });
+  await handle(s, msg(1, "https://example.com/gallery"), 42, send, ai);
+  const a = s.items()[0];
+  assert.equal(a.type, "resource");
+  assert.equal(a.consumed_on, null);
+  const b = s.capture(2, "https://example.com/tool");
+  s.edit(b, { consumed_on: "2026-01-01" });
+  s.applyAI(b, { question: null, type: "resource", tags: [] });
+  assert.equal(s.item(b)!.consumed_on, "2026-01-01");
+});
+
+test("«потім» next to a link or right after it sends the link to «На потім»", async () => {
+  const { s, out, send } = harness();
+  await handle(s, msg(1, "https://example.com/a Потім!"), 42, send);
+  const a = s.items()[0];
+  assert.equal(a.status, "saved");
+  assert.equal(a.consumed_on, null);
+  assert.equal(s.reflections(a.id).length, 0);
+  assert.equal(out.at(-1)!.k.inline_keyboard[1][1].text, "На потім ✓");
+  await handle(s, msg(2, "https://example.com/b"), 42, send);
+  await handle(s, msg(3, "🔖"), 42, send);
+  const b = s.items()[0];
+  assert.equal(b.status, "saved");
+  assert.equal(s.reflections(b.id).length, 0);
+  assert.match(out.at(-1)!.text, /^На потім:/);
+  assert.equal(s.unreflected().length, 0);
+  assert.equal(s.items().length, 2);
+});
+
+test("«потім» without a recent link explains instead of saving a note", async () => {
+  const { s, out, send } = harness();
+  await handle(s, msg(1, "later"), 42, send);
+  assert.equal(s.items().length, 0);
+  assert.match(out[0].text, /разом із посиланням/);
+});
+
+test("the «На потім» button toggles; leaving it marks the item seen today", async () => {
+  const { s, out, send } = harness();
+  await handle(s, msg(1, "https://example.com/a"), 42, send);
+  const id = s.items()[0].id;
+  await handle(s, cb(2, `later:${id}`, out[0].id), 42, send);
+  assert.equal(s.item(id)!.status, "saved");
+  assert.equal(s.unreflected().length, 0);
+  assert.equal(out.at(-1)!.o?.edit?.id, out[0].id);
+  await handle(s, cb(3, `later:${id}`, out[0].id), 42, send);
+  const item = s.item(id)!;
+  assert.equal(item.status, "consumed");
+  assert.equal(item.date_source, "user");
+  assert.equal(s.unreflected().length, 1);
+  assert.deepEqual(
+    s.all("SELECT old, new FROM events WHERE field='status'").map((e) => `${e.old}->${e.new}`),
+    ["consumed->saved", "saved->consumed"],
   );
 });

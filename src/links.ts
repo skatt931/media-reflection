@@ -90,5 +90,9 @@ export function typeFromUrl(raw: string | null) {
   if (on("imdb.com", "letterboxd.com")) return "film";
   if (on("store.steampowered.com", "gog.com", "store.playstation.com", "itch.io")) return "game";
   if (on("goodreads.com")) return "book";
+  // Sites kept for reuse (galleries, tools, references), and any site's home page.
+  if (on("dribbble.com", "behance.net", "awwwards.com", "github.com", "producthunt.com")) return "resource";
+  if (on("figma.com") && path.startsWith("/community")) return "resource";
+  if (path === "/" && !url.search) return "resource";
   return "unknown";
 }

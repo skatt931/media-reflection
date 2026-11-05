@@ -216,12 +216,14 @@ export function exportVault(s: Store, vault: string): ExportReport {
     s.run("DELETE FROM vault_exports WHERE vault=? AND item_id=?", root, row.item_id);
   }
   const rows = s.items().filter((i) => links.has(i.id));
-  const reflected = new Set(s.all("SELECT DISTINCT item_id FROM reflections").map((r) => r.item_id));
+  const open = new Set(s.unreflected().map((i) => i.id));
   const sections = [
     ["Останні додавання", rows.slice(0, 15)],
     ["На потім", rows.filter((i) => i.status === "saved")],
+    ["Улюблене", rows.filter((i) => i.reaction === "loved")],
     ["Сподобалося", rows.filter((i) => i.reaction === "positive")],
-    ["Без вражень", rows.filter((i) => !reflected.has(i.id))],
+    ["Ресурси", rows.filter((i) => i.type === "resource")],
+    ["Без вражень", rows.filter((i) => open.has(i.id))],
   ] as const;
   // Month and year reviews; a past month that did not change is left as is.
   const { months, years } = periods(s);

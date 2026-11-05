@@ -44,7 +44,7 @@ function library(s: Store) {
 
 test("status, reaction and type changes are logged; other edits are not", () => {
   const s = new Store(":memory:");
-  const id = s.capture(1, "https://example.com");
+  const id = s.capture(1, "https://example.com/page");
   s.edit(id, { status: "saved" }, at("2026-11-01"));
   s.edit(id, { reaction: "positive" });
   s.edit(id, { reaction: "positive" });
@@ -79,6 +79,24 @@ test("month review: mix, likes, topics across types, habits, backlog", () => {
   assert.equal(slide("На потім")[0], "Додано: 0 · переглянуто: 1");
   assert.match(slideText(r, 0), /^Листопад 2026 · 1\/\d\n\nЩо зберіг\n\nЗбережено: 4/);
   assert.equal(review(s, "2026-09"), null);
+});
+
+test("❤️ gets its own favourites slide and counts as liked for taste", () => {
+  const s = new Store(":memory:");
+  const add = (n: number, url: string, reaction: string) =>
+    s.patch(s.capture(n, url, at("2026-11-1" + n)), { reaction, title: `Запис ${n}` });
+  add(1, "https://youtube.com/watch?v=1", "loved");
+  add(2, "https://youtube.com/watch?v=2", "loved");
+  add(3, "https://youtube.com/watch?v=3", "positive");
+  add(4, "https://example.com/1", "negative");
+  add(5, "https://example.com/2", "mixed");
+  add(6, "https://example.com/3", "positive");
+  const r = review(s, "2026-11")!;
+  assert.deepEqual(r.slides[1], { heading: "Улюблене ❤️", lines: ["• «Запис 1»", "• «Запис 2»"] });
+  const likes = r.slides.find((x) => x.heading === "Що сподобалось")!.lines;
+  assert.equal(likes[0], "❤️ 2 · 👍 2 · 😐 1 · 👎 1");
+  assert.ok(likes.includes("Найчастіше подобається: Відео (3 з 3)"));
+  assert.ok(likes.includes("Найрідше: Інше (1 з 3)"));
 });
 
 test("year review adds month by month, first and last item", () => {

@@ -19,18 +19,25 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     abort.abort();
   });
 
-type TelegramError = Error & { code?: number; retry?: number; description?: string };
+type TelegramError = Error & { code?: number; retry?: number; description?: string; method?: string };
 async function api(method: string, body: object | FormData = {}) {
   const form = body instanceof FormData;
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    ...(form ? {} : { headers: { "content-type": "application/json" } }),
-    body: form ? body : JSON.stringify(body),
-    signal: AbortSignal.any([abort.signal, AbortSignal.timeout(40000)]),
-  });
-  const data = (await response.json()) as any;
+  let data: any;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: "POST",
+      ...(form ? {} : { headers: { "content-type": "application/json" } }),
+      body: form ? body : JSON.stringify(body),
+      signal: AbortSignal.any([abort.signal, AbortSignal.timeout(40000)]),
+    });
+    data = await response.json();
+    data.error_code ??= data.ok ? undefined : response.status;
+  } catch (e) {
+    if (e instanceof Error) (e as TelegramError).method = method;
+    throw e;
+  }
   if (!data.ok) {
-    const e = new Error(`Telegram ${method}: code ${data.error_code ?? response.status}`) as TelegramError;
+    const e = new Error(`Telegram ${method}: code ${data.error_code}`) as TelegramError;
     e.code = data.error_code;
     e.retry = data.parameters?.retry_after ?? 0;
     e.description = data.description;
@@ -139,8 +146,18 @@ try {
       if (!running) break;
       const err = e as TelegramError;
       if (err.code === 401 || err.code === 409) throw err;
+      // A long poll on a connection that died (Mac sleep, Wi-Fi change) only ends by timeout.
+      // The update is still waiting on Telegram's side, so reconnect at once.
+      if (err.name === "TimeoutError" && err.method === "getUpdates") {
+        console.error("Зв'язок із Telegram обірвався, перепідключаюсь.");
+        continue;
+      }
       const delay = Math.max(err.retry ?? 0, Math.min(30, 2 ** Math.min(++failures, 5)));
-      console.error(`Помилка${err.code ? " " + err.code : ""}, повтор через ${delay} с.`);
+      const reason =
+        err.name === "TimeoutError"
+          ? `Telegram не відповів на ${err.method ?? "запит"} за 40 с`
+          : `Помилка${err.code ? " " + err.code : ""}${err.method ? " (" + err.method + ")" : ""}`;
+      console.error(`${reason}, повтор через ${delay} с.`);
       await sleep(delay * 1000, undefined, { signal: abort.signal }).catch(() => {});
     }
   }

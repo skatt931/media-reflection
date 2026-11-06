@@ -1,4 +1,4 @@
-import { Store, normalizeTags, needsMetadata } from "./store.ts";
+import { Store, normalizeTags, needsMetadata, aiCurrent } from "./store.ts";
 import { fields, types, statuses, reactions, localDate, localTime, validDate, addDays } from "./fields.ts";
 import type { AI, Suggestion } from "./groq.ts";
 import { createSearch, type Ask } from "./search.ts";
@@ -133,6 +133,7 @@ async function sendCard(
 }
 
 export const commands = [
+  { command: "help", description: "Як користуватися" },
   { command: "list", description: "Останні записи" },
   { command: "later", description: "На потім" },
   { command: "reflect", description: "Без вражень" },
@@ -142,6 +143,82 @@ export const commands = [
   { command: "enrich", description: "Дозаповнити старі записи" },
   { command: "cancel", description: "Вийти з діалогу" },
 ];
+
+const libraryMenu = {
+  inline_keyboard: [
+    [button("Останні", "library:recent"), button("На потім", "library:later")],
+    [button("Без вражень", "library:unreviewed"), button("За типом", "library:types")],
+    [button("Підсумок місяця", "library:review")],
+  ],
+};
+// Only the types that have items, most common first.
+function typeMenu(s: Store) {
+  const count = new Map<string, number>();
+  for (const i of s.items()) count.set(i.type, (count.get(i.type) ?? 0) + 1);
+  const rows = [...count]
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, n]) => button(`${types[type] ?? type} ${n}`, `bytype:${type}`));
+  return { inline_keyboard: [...pairs(rows), [button("← Назад", "library:menu")]] };
+}
+
+// Help is one message; topic buttons swap its text.
+const help: Record<string, { title: string; text: string }> = {
+  save: {
+    title: "Зберегти",
+    text:
+      "Поділись посиланням із YouTube, Spotify, Threads чи браузера в бота — він сам підтягне назву, обкладинку й теги.\n\n" +
+      "• Коментар у тому ж повідомленні стане першою думкою: «посилання + дуже глибоко про вигорання».\n" +
+      "• «потім» поруч із посиланням (або одразу після) — у «На потім», а не в переглянуте.\n" +
+      "• Без посилання теж можна: «Книга «Атомні звички», порадив друг» або голосове.\n" +
+      "• Переслане з каналу зберігається як матеріал.",
+  },
+  reflect: {
+    title: "Враження",
+    text:
+      "Під карткою: ❤️ улюблене · 👍 сподобалось · 😐 так собі · 👎 ні.\n\n" +
+      "• «Додати думку» або відповідь (reply) на картку — і текст стане думкою до неї.\n" +
+      "• Коротке повідомлення одразу після посилання теж прикріпиться до нього.\n" +
+      "• «Змінити» — тип, дата, теги, назва або видалити запис.\n" +
+      "• «На потім» на картці — відкласти; ще раз — позначити переглянутим сьогодні.",
+  },
+  find: {
+    title: "Пошук",
+    text:
+      "«Запитати» — пиши звичайною мовою, AI шукає лише у твоїй бібліотеці.\n\n" +
+      "• «подкасти про AI, які сподобались»\n" +
+      "• «що я зберігав про дизайн у жовтні»\n" +
+      "• «ресурси для натхнення»\n" +
+      "• «музика, яку я лайкнув»\n\n" +
+      "Далі можна уточнювати: «а тільки ❤️», «а за минулий місяць».",
+  },
+  lists: {
+    title: "Списки",
+    text:
+      "«Бібліотека» — Останні, На потім, Без вражень, За типом.\n\n" +
+      "• Список — одне повідомлення, гортай ← →.\n" +
+      "• На будь-якій картці в списку можна реагувати чи відповісти думкою.\n" +
+      "• «Без вражень» — переглянуте, де ще немає ні реакції, ні думки.",
+  },
+  reviews: {
+    title: "Підсумки",
+    text:
+      "• П'ятниця, 18:00 — тихе повідомлення: скільки збережено за тиждень.\n" +
+      "• 1-го числа — підсумок місяця, у січні ще й року. Слайди гортаються ← →.\n" +
+      "• /review 2026-10 — будь-який місяць, /review 2026 — рік.\n" +
+      "• «Експорт» — оновити Медіатеку в Obsidian.\n" +
+      "• /enrich — дозаповнити старі записи (назви, обкладинки, теги).",
+  },
+};
+const helpIntro =
+  "Сюди можна кидати все, що дивишся, слухаєш і читаєш, — а потім знайти й згадати, що думав.\n\nОбери тему:";
+function helpButtons(current?: string) {
+  const topics = Object.entries(help).map(([key, t]) =>
+    button(key === current ? `· ${t.title} ·` : t.title, `help:${key}`),
+  );
+  return { inline_keyboard: [...pairs(topics), ...(current ? [[button("← Зміст", "help:index")]] : [])] };
+}
+const helpText = (topic?: string) =>
+  topic && help[topic] ? `${help[topic].title}\n\n${help[topic].text}` : helpIntro;
 
 type Pager = { title: string; ids: string[]; index: number };
 const heading = (p: Pager) => `${p.title} · ${p.index + 1}/${p.ids.length}\n\n`;
@@ -314,6 +391,7 @@ export async function handle(
           raw,
           allowQuestion: options.question,
           evidence: options.evidence,
+          knownTags: s.tagVocabulary(),
         });
       } catch {
         suggestion = null;
@@ -403,7 +481,7 @@ export async function handle(
     s.setContext(null);
     const todo = s
       .items()
-      .filter((i) => (services.metadata && needsMetadata(i)) || (ai && !i.ai_done))
+      .filter((i) => (services.metadata && needsMetadata(i)) || (ai && !aiCurrent(i)))
       .slice(0, 20);
     if (!todo.length) {
       await send("Оновлювати нічого.", menu);
@@ -413,7 +491,7 @@ export async function handle(
     for (const start of todo) {
       const id = await loadMetadata(start.id);
       const item = s.item(id)!;
-      if (ai && !item.ai_done) {
+      if (ai && !aiCurrent(item)) {
         const suggestion = await ai({
           title: item.title,
           type: item.type,
@@ -426,11 +504,12 @@ export async function handle(
           raw: s.captures(id)[0]?.raw ?? item.title,
           allowQuestion: false,
           evidence: evidenceFor(id, item.title),
+          knownTags: s.tagVocabulary(),
         }).catch(() => null);
         s.applyAI(id, suggestion);
       }
       const after = s.item(id)!;
-      if (!needsMetadata(after) || after.ai_done) done++;
+      if (!needsMetadata(after) || aiCurrent(after)) done++;
     }
     await send(`Оновлено ${done} з ${todo.length}. Подивитися: Бібліотека → Останні.`, menu);
   }
@@ -549,26 +628,14 @@ export async function handle(
     if (["/cancel", "/done"].includes(cmd) || text === "Скасувати") {
       s.setContext(null);
       await send("Скасовано.", menu);
-    } else if (["/start", "/help"].includes(cmd)) {
+    } else if (["/start", "/help", "/довідка"].includes(cmd) || text === "Довідка") {
       s.setContext(null);
-      await send(
-        "Надішли посилання, текст або голосове — збережу й додам теги. Нові записи позначаю «Ознайомився».\n" +
-          "Додай «потім» до посилання — і воно піде в «На потім».\n\n" +
-          "Бібліотека — останні, на потім, без вражень\n" +
-          "Запитати — пошук по збереженому\n" +
-          "Експорт — оновити Медіатеку в Obsidian\n" +
-          "У п'ятницю ввечері — короткий підсумок тижня, 1-го числа — підсумок місяця.\n\n" +
-          "Решта команд — у меню «/».",
-        menu,
-      );
+      // The reply keyboard is set by a plain message; inline buttons need their own.
+      if (cmd === "/start") await send("Привіт! Меню — внизу.", menu);
+      await send(helpText(), helpButtons());
     } else if (text === "Бібліотека") {
       s.setContext(null);
-      await send("Що показати?", {
-        inline_keyboard: [
-          [button("Останні", "library:recent"), button("На потім", "library:later")],
-          [button("Без вражень", "library:unreviewed"), button("Підсумок місяця", "library:review")],
-        ],
-      });
+      await send("Що показати?", libraryMenu);
     } else if (cmd === "/list" || text === "Останні" || text === "покажи останнє")
       await list("Останні", s.items());
     else if (cmd === "/later" || text === "На потім") await list("На потім", later());
@@ -602,7 +669,10 @@ export async function handle(
       const query = text.startsWith("/") ? text.slice(text.indexOf(" ") + 1).trim() : "";
       if (!query || text === cmd) {
         s.setContext({ mode: "ask", history: [], expires: until() });
-        await send("Що шукаєш? Напр. «щось про Відьмака», далі можна «а тільки відео?».", dialogMenu);
+        await send(
+          "Що шукаєш? Напр. «подкасти про AI, які сподобались» або «ресурси для натхнення». Далі можна уточнити: «а тільки за жовтень».",
+          dialogMenu,
+        );
       } else await ask(query, active);
     } else if (text.startsWith("/"))
       await send(`Невідома команда. Є ${commands.map((c) => "/" + c.command).join(", ")}.`, menu);
@@ -613,8 +683,24 @@ export async function handle(
     const parts = String(c.data ?? "").split(":");
     const action = parts[0];
     const id = parts.at(-1)!;
+    if (action === "help") {
+      const topic = parts[1] === "index" ? undefined : parts[1];
+      await send(helpText(topic), helpButtons(topic), { edit: here });
+      return;
+    }
+    if (action === "bytype") {
+      if (Object.hasOwn(types, parts[1]))
+        await list(
+          types[parts[1]],
+          s.items().filter((i) => i.type === parts[1]),
+          here,
+        );
+      return;
+    }
     if (action === "library") {
-      if (parts[1] === "later") await list("На потім", later(), here);
+      if (parts[1] === "menu") await send("Що показати?", libraryMenu, { edit: here });
+      else if (parts[1] === "types") await send("Який тип?", typeMenu(s), { edit: here });
+      else if (parts[1] === "later") await list("На потім", later(), here);
       else if (parts[1] === "unreviewed") await list("Без вражень", s.unreflected(), here);
       else if (parts[1] === "review") await showReview(localDate().slice(0, 7), here);
       else await list("Останні", s.items(), here);

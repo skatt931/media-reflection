@@ -104,6 +104,12 @@ export class Store {
       );
       this.fitStatusToType(row.id);
     }
+    // Earlier versions stored multi-word tags with underscores.
+    for (const row of this.all("SELECT id FROM items WHERE details LIKE '%\\_%' ESCAPE '\\'")) {
+      const tags = this.item(row.id)!.tags ?? [];
+      const fixed = normalizeTags(tags);
+      if (JSON.stringify(fixed) !== JSON.stringify(tags)) this.patch(row.id, { tags: fixed });
+    }
     // Earlier versions fed "Автор: невідомий" to the AI, which then saved it as the author.
     for (const row of this.all("SELECT id FROM items WHERE details LIKE '%невідомий%'")) {
       const item = this.item(row.id)!;
@@ -146,6 +152,16 @@ export class Store {
   }
   items(): Row[] {
     return this.all("SELECT * FROM items ORDER BY created_at DESC,rowid DESC").map((r) => this.unpack(r));
+  }
+  // Tags already in use, most frequent first, so the AI reuses them instead of inventing synonyms.
+  tagVocabulary(max = 80) {
+    const count = new Map<string, number>();
+    for (const item of this.items())
+      for (const tag of item.tags ?? []) count.set(tag, (count.get(tag) ?? 0) + 1);
+    return [...count]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, max)
+      .map(([tag]) => tag);
   }
   item(id: string): Row | undefined {
     const r = this.all("SELECT * FROM items WHERE id=?", id)[0];
@@ -203,7 +219,7 @@ export class Store {
     const locked = new Set<string>(item.manual_fields ?? []);
     if (item.manual_type) locked.add("type");
     const fromPage = new Set<string>(item.metadata_fields ?? []);
-    const patch: Row = { ai_done: true };
+    const patch: Row = { ai_done: aiVersion };
     if (value.type && value.type !== "unknown" && Object.hasOwn(types, value.type) && !locked.has("type"))
       patch.type = value.type;
     // An empty AI answer (e.g. for a one-word reflection) must not erase earlier tags.
@@ -391,16 +407,20 @@ export class Store {
   }
 }
 
+// Bumped when the AI prompt changes enough that /enrich should redo older items.
+export const aiVersion = 2;
+export const aiCurrent = (item: Row) => item.ai_done === aiVersion;
+// Tags are stored as plain words ("штучний інтелект"); Obsidian gets them with underscores.
 export function normalizeTags(values: string[]) {
   return [
     ...new Set(
       values
         .map((t) =>
           t
-            .trim()
             .toLowerCase()
-            .replace(/[^\p{L}\p{N}_/-]+/gu, "_")
-            .replace(/^[_/]+|[_/]+$/g, ""),
+            .replace(/[^\p{L}\p{N}/'’-]+/gu, " ")
+            .trim()
+            .replace(/^[/-]+|[/-]+$/g, ""),
         )
         .filter((t) => t && /\p{L}/u.test(t)),
     ),

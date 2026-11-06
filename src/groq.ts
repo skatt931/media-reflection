@@ -18,6 +18,8 @@ export type AnalysisContext = {
   allowQuestion?: boolean;
   // Text that title/creator may be quoted from. Without it the AI never sets them.
   evidence?: string;
+  // Tags already in the library, reused when they fit.
+  knownTags?: string[];
 };
 export type AI = (context: AnalysisContext) => Promise<Suggestion | null>;
 export const defaultModel = "openai/gpt-oss-120b";
@@ -101,10 +103,11 @@ export function createGroq(
       source: context.source ?? null,
       description: context.description?.slice(0, 1000) ?? null,
       allowQuestion: context.allowQuestion ?? true,
+      knownTags: (context.knownTags ?? []).slice(0, 80),
     };
     const value = await request(
       "media_enrichment",
-      "Ти помічник особистої медіатеки. raw — повідомлення користувача, description — текст зі сторінки за посиланням, source — сайт. Визнач тип, до 3 тематичних тегів (про що матеріал, не платформа: не 'youtube', 'podcast', 'video'), до 8 згаданих назв/людей/творів, і summary — одне речення про зміст. Теги й summary пиши українською, навіть якщо матеріал іншою мовою; власні назви лишай як є. Тип: social_post — допис у соцмережі (Threads, Instagram, X), video — відео й reels, podcast — епізод подкасту, resource — сайт, інструмент, галерея чи довідник, які зберігають, щоб повертатися (а не один матеріал для перегляду). unknown — лише якщо зовсім неясно; тоді type=null. Якщо даних недостатньо — порожній список і summary=null. Не вигадуй змісту, якого немає в даних. Title і creator — лише дослівний фрагмент наданих даних, не з пам’яті. Summary описує матеріал, а не думку користувача. Якщо allowQuestion=true і є notes, постав одне коротке уточнення про враження, інакше question=null. Не став реакцію чи оцінку.",
+      "Ти помічник особистої медіатеки. raw — повідомлення користувача, description — текст зі сторінки за посиланням, source — сайт. Визнач тип, 3–6 тегів, до 8 згаданих назв/людей/творів, і summary — одне речення про зміст. Теги потрібні для пошуку: від загального до конкретного (напр. «технології», «штучний інтелект», «генерація зображень»); для музики й фільмів — жанр і настрій; для ресурсів — для чого він (напр. «дизайн», «натхнення»). Тег — 1–3 слова з пробілами, без # і підкреслень, у називному відмінку. Не тег: платформа чи формат ('youtube', 'відео', 'подкаст'), автор, назва самого матеріалу — вони вже є окремо. knownTags — теги, які вже є в бібліотеці: якщо за змістом пасує наявний, бери його дослівно, а не синонім чи переклад («штучний інтелект», а не «ai» чи «ші»); новий — лише коли жоден не пасує. Теги й summary пиши українською, навіть якщо матеріал іншою мовою; власні назви лишай як є. Тип: social_post — допис у соцмережі (Threads, Instagram, X), video — відео й reels, podcast — епізод подкасту, resource — сайт, інструмент, галерея чи довідник, які зберігають, щоб повертатися (а не один матеріал для перегляду). unknown — лише якщо зовсім неясно; тоді type=null. Якщо даних недостатньо — порожній список і summary=null. Не вигадуй змісту, якого немає в даних. Title і creator — лише дослівний фрагмент наданих даних, не з пам’яті. Summary описує матеріал, а не думку користувача. Якщо allowQuestion=true і є notes, постав одне коротке уточнення про враження, інакше question=null. Не став реакцію чи оцінку.",
       input,
       {
         question: nullableText,
@@ -144,7 +147,7 @@ export function createGroq(
       question: input.allowQuestion && input.notes.length ? value.question?.slice(0, 300) || null : null,
       tags: strings(
         value.tags.map((t: string) => t.toLowerCase()),
-        3,
+        6,
       ),
       type: value.type === "unknown" ? null : value.type,
       entities: strings(value.entities, 8),

@@ -58,7 +58,8 @@ function renderNote(s: Store, id: string, cover: string | null) {
     дата_джерело: item.date_source ?? null,
     додано: localDate(new Date(item.created_at)),
     враження: reactions[item.reaction] ?? null,
-    tags: item.tags,
+    // Obsidian tags cannot contain spaces.
+    tags: (item.tags ?? []).map((t: string) => t.replace(/\s+/g, "_")),
     сутності: item.entities ?? [],
     ...(cover ? { обкладинка: `[[${cover}]]` } : {}),
   };

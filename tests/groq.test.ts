@@ -11,7 +11,7 @@ test("Groq request uses strict output, bounded context and validates returned su
           message: {
             content: JSON.stringify({
               question: "Що зачепило?",
-              tags: ["Тема", "тема", "Друге", "Третє", "Зайве"],
+              tags: ["Тема", "тема", "Друге", "Третє", "4", "5", "6", "Зайве"],
               type: "book",
             }),
           },
@@ -31,7 +31,7 @@ test("Groq request uses strict output, bounded context and validates returned su
   assert.equal(context.title.length, 300);
   assert.equal(context.notes.length, 3);
   assert.equal(context.notes[2].length, 1000);
-  assert.deepEqual(result?.tags, ["тема", "друге", "третє"]);
+  assert.deepEqual(result?.tags, ["тема", "друге", "третє", "4", "5", "6"]);
 });
 test("missing key, HTTP limit, malformed response and network failure degrade safely", async () => {
   assert.equal(createGroq(undefined), undefined);

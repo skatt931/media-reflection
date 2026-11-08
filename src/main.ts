@@ -4,6 +4,7 @@ import { handle, weekly, reviews, commands, type Send } from "./bot.ts";
 import { createRuntime } from "./runtime.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
+if (process.env.HOME) throw new Error("rollback test: intentional startup failure");
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const owner = Number(process.env.TELEGRAM_USER_ID);
 if (!token || !Number.isSafeInteger(owner) || owner <= 0) {

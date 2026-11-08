@@ -17,6 +17,10 @@
     "service:install": "node scripts/service.mjs install",
     "service:uninstall": "node scripts/service.mjs uninstall",
     "service:status": "node scripts/service.mjs status",
+    "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
+    "backup:install": "node --env-file-if-exists=.env scripts/backup.mjs install",
+    "backup:uninstall": "node scripts/backup.mjs uninstall",
+    "backup:status": "node --env-file-if-exists=.env scripts/backup.mjs status",
     "format": "prettier --write src scripts tests"
   },
   "devDependencies": {

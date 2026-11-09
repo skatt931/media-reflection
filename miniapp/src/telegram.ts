@@ -7,6 +7,7 @@ type WebApp = {
   ready(): void;
   expand(): void;
   disableVerticalSwipes?(): void;
+  openLink?(url: string): void;
   isVersionAtLeast?(version: string): boolean;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
@@ -75,4 +76,10 @@ export function paintChrome(ground: string, bar: string) {
 
 export function onThemeChanged(callback: () => void) {
   webApp?.onEvent?.("themeChanged", callback);
+}
+
+// Sources open in the system browser, not inside the Mini App.
+export function openLink(url: string) {
+  if (webApp?.openLink) webApp.openLink(url);
+  else window.open(url, "_blank", "noopener");
 }

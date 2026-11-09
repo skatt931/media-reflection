@@ -3,8 +3,10 @@ import { readFile, stat } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
 import type { JournalStore } from "../journal.ts";
+import type { Store } from "../store.ts";
 import { checkInitData } from "./auth.ts";
 import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
+import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
 
 // Listens on loopback only: the outside world reaches it through `tailscale serve <port>`.
 export const MINIAPP_HOST = "127.0.0.1";
@@ -16,6 +18,8 @@ export type MiniAppOptions = {
   owner: number;
   // Diary and ideas; without it those routes answer 503 and the rest of the app still works.
   journal?: JournalStore;
+  // The media library the screens read. Read-only: nothing here writes to it. Without it: 503.
+  store?: Store;
   staticDir?: string;
   now?: () => Date;
 };
@@ -35,7 +39,7 @@ const TYPES: Record<string, string> = {
 // Telegram's own script is the only third-party origin. Framing stays allowed: Telegram Web embeds the app.
 const SECURITY = {
   "content-security-policy":
-    "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'",
+    "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
 };
@@ -62,18 +66,50 @@ const diaryRows = (journal: JournalStore) =>
 const ideaRows = (journal: JournalStore) =>
   journal.all("SELECT id, idea_date, idea_time, body FROM ideas") as IdeaRow[];
 
-// Returns undefined for an unknown route and null when the data behind it is not open. Every route gets here
-// only after initData was verified.
-function route(url: URL, userId: number, journal: JournalStore | undefined): unknown {
+const LIBRARY_ID = /^\/api\/library\/([^/]+?)(\/cover)?$/;
+const notFound = (res: ServerResponse) => json(res, 404, { error: "not_found" });
+const unavailable = (res: ServerResponse) => json(res, 503, { error: "unavailable" });
+
+async function library(url: URL, res: ServerResponse, store: Store | undefined) {
+  if (!store) return unavailable(res);
+  if (url.pathname === "/api/library")
+    return json(res, 200, libraryList(store, libraryFilter(url.searchParams)));
+  const match = LIBRARY_ID.exec(url.pathname);
+  if (!match) return notFound(res);
+  let id: string;
+  try {
+    id = decodeURIComponent(match[1]);
+  } catch {
+    return notFound(res);
+  }
+  if (match[2]) {
+    const cover = libraryCover(store, id);
+    if (!cover) return notFound(res);
+    return send(res, 200, await readFile(cover.path), {
+      "content-type": cover.type,
+      "cache-control": "private, max-age=3600",
+    });
+  }
+  const item = libraryItem(store, id);
+  return item ? json(res, 200, item) : notFound(res);
+}
+
+// Every route gets here only after initData was verified.
+async function route(url: URL, userId: number, res: ServerResponse, options: MiniAppOptions) {
   const path = url.pathname;
-  if (path === "/api/me") return { userId };
+  if (path === "/api/me") return json(res, 200, { userId });
+  if (path === "/api/library" || path.startsWith("/api/library/")) return library(url, res, options.store);
   const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
-  if (path !== "/api/diary" && path !== "/api/ideas" && !diary) return undefined;
-  if (!journal) return null;
+  if (path !== "/api/diary" && path !== "/api/ideas" && !diary) return notFound(res);
+  const journal = options.journal;
+  if (!journal) return unavailable(res);
   const q = url.searchParams.get("q") ?? undefined;
-  if (path === "/api/diary") return diaryList(diaryRows(journal), q);
-  if (diary) return diaryEntry(diaryRows(journal), Number(diary[1])) ?? undefined;
-  return ideaList(ideaRows(journal), q);
+  if (path === "/api/diary") return json(res, 200, diaryList(diaryRows(journal), q));
+  if (diary) {
+    const entry = diaryEntry(diaryRows(journal), Number(diary[1]));
+    return entry ? json(res, 200, entry) : notFound(res);
+  }
+  return json(res, 200, ideaList(ideaRows(journal), q));
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL, options: MiniAppOptions) {
@@ -83,10 +119,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, options:
     : ({ ok: false } as const);
   // One answer for every refusal, so nothing reveals which check failed.
   if (!checked.ok) return json(res, 401, { error: "unauthorized" });
-  const body = route(url, checked.userId, options.journal);
-  if (body === undefined) return json(res, 404, { error: "not_found" });
-  if (body === null) return json(res, 503, { error: "unavailable" });
-  return json(res, 200, body);
+  return route(url, checked.userId, res, options);
 }
 
 async function file(root: string, path: string) {

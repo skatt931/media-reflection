@@ -81,3 +81,5 @@ export function plural(n: number, one: string, few: string, many: string) {
 export const records = (n: number) => `${n} ${plural(n, "запис", "записи", "записів")}`;
 export const wordsLabel = (n: number) => `${n} ${plural(n, "слово", "слова", "слів")}`;
 export const ideasLabel = (n: number) => `${n} ${plural(n, "ідея", "ідеї", "ідей")}`;
+export const materialsLabel = (n: number) => `${n} ${plural(n, "матеріал", "матеріали", "матеріалів")}`;
+export const shortDate = (iso: string) => `${parts(iso).day} ${monthAbbr[parts(iso).month]}`;

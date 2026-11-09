@@ -6,6 +6,7 @@ import { initData } from "./telegram.ts";
 import { Diary } from "./screens/Diary.tsx";
 import { Entry } from "./screens/Entry.tsx";
 import { Ideas } from "./screens/Ideas.tsx";
+import { Material } from "./screens/Material.tsx";
 import { Media } from "./screens/Media.tsx";
 import { Search } from "./screens/Search.tsx";
 
@@ -64,6 +65,8 @@ export function App() {
     <div className="app">
       {route.screen === "entry" ? (
         <Entry key={route.id} id={route.id} />
+      ) : route.screen === "material" ? (
+        <Material key={route.id} id={route.id} />
       ) : route.screen === "search" ? (
         <Search key={route.section} section={route.section} initial={route.q} />
       ) : route.section === "diary" ? (

@@ -159,7 +159,10 @@ test("help lists every command and «Довідка» is always on the keyboard"
   const { s, out, send } = harness();
   await handle(s, msg(1, "/start"), 42, send);
   const hello = out.at(-2)!;
-  assert.deepEqual(hello.k.keyboard.at(-1), ["Бібліотека", "Запитати", "Експорт", "Довідка"]);
+  assert.deepEqual(hello.k.keyboard, [
+    ["Щоденник", "Ідея", "Довідка"],
+    ["Бібліотека", "Запитати", "Експорт"],
+  ]);
   const index = out.at(-1)!.text;
   for (const { command, description } of commands)
     assert.ok(index.includes(`/${command} — ${description}`), command);
@@ -169,6 +172,11 @@ test("help lists every command and «Довідка» is always on the keyboard"
   // Inside a dialog the keyboard keeps it too.
   await handle(s, msg(3, "/idea"), 42, send, undefined, { journal: new JournalStore(":memory:") });
   assert.ok(out.at(-1)!.k.keyboard.flat().includes("Довідка"));
+  // The keyboard buttons are the same as /diary and /idea (bare /idea waits for the next message).
+  await handle(s, msg(4, "Ідея"), 42, send, undefined, { journal: new JournalStore(":memory:") });
+  assert.match(out.at(-1)!.text, /наступним повідомленням/);
+  await handle(s, msg(5, "Щоденник"), 42, send, undefined, { journal: new JournalStore(":memory:") });
+  assert.match(out.at(-1)!.text, /Щоденник/);
 });
 
 test("AI gets the existing tags; /enrich re-tags items done by the older prompt", async () => {

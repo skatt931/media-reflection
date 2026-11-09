@@ -6,3 +6,6 @@ data/
 exports/
 *.sqlite*
 .DS_Store
+
+# знімки макетів
+design/mockups/screenshots/

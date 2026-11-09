@@ -1,6 +1,7 @@
 import { Store } from "./store.ts";
 import { types, statuses, reactions, liked, validDate, localDate } from "./fields.ts";
 import type { JSONRequest } from "./groq.ts";
+import { fold, matches } from "./words.ts";
 export type SearchPlan = {
   terms: string[];
   types: string[];
@@ -39,21 +40,6 @@ const words = (text: string) =>
           "some",
         ].includes(w),
     );
-// Ukrainian words change their endings («Відьмак», «Відьмака»; «штучний», «штучного»), so a
-// word matches by its beginning: words of 5–6 letters lose two final letters, longer ones three.
-const fold = (text: string) =>
-  text
-    .toLocaleLowerCase()
-    .replace(/[_’ʼ`]/g, (c) => (c === "_" ? " " : "'"))
-    .replace(/ё/g, "е");
-const stem = (word: string) =>
-  word.length < 5 ? word : word.slice(0, Math.max(4, word.length - (word.length >= 7 ? 3 : 2)));
-export const matches = (text: string, term: string) => {
-  const parts = fold(term)
-    .split(/[^\p{L}\p{N}']+/u)
-    .filter(Boolean);
-  return parts.length > 0 && parts.every((w) => text.includes(stem(w)));
-};
 // Items that pass the filters, best matches first. With fill, items without a word match
 // follow, so the AI can still find them by meaning (e.g. tags in another language).
 export function retrieve(s: Store, plan: SearchPlan, max = 10, fill = false) {

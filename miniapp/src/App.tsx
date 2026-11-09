@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
-import { ApiError, get } from "./api.ts";
+import { ApiError, get, mock } from "./api.ts";
+import { Icon, type IconName } from "./icons.tsx";
+import { sectionHash, useRoute, type Section } from "./router.ts";
 import { initData } from "./telegram.ts";
+import { Diary } from "./screens/Diary.tsx";
+import { Entry } from "./screens/Entry.tsx";
+import { Ideas } from "./screens/Ideas.tsx";
+import { Media } from "./screens/Media.tsx";
+import { Search } from "./screens/Search.tsx";
 
-const sections = [
-  { id: "diary", icon: "📓", title: "Щоденник", hint: "Тут будуть записи щоденника." },
-  { id: "media", icon: "📚", title: "Медіатека", hint: "Тут буде медіатека." },
-  { id: "ideas", icon: "💡", title: "Ідеї", hint: "Тут будуть ідеї." },
-] as const;
-type SectionId = (typeof sections)[number]["id"];
-
-const fromHash = (): SectionId => sections.find((s) => `#/${s.id}` === location.hash)?.id ?? "diary";
+const sections: { id: Section; icon: IconName; title: string }[] = [
+  { id: "diary", icon: "diary", title: "Щоденник" },
+  { id: "media", icon: "library", title: "Медіатека" },
+  { id: "ideas", icon: "ideas", title: "Ідеї" },
+];
 
 type Access = "checking" | "ok" | "outside" | "denied" | "failed";
 
 function useAccess(): [Access, () => void] {
-  const [access, setAccess] = useState<Access>(initData ? "checking" : "outside");
+  const [access, setAccess] = useState<Access>(mock ? "ok" : initData ? "checking" : "outside");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!initData) return;
@@ -31,16 +35,6 @@ function useAccess(): [Access, () => void] {
   return [access, () => setAttempt((n) => n + 1)];
 }
 
-function useSection(): [SectionId, (id: SectionId) => void] {
-  const [section, setSection] = useState(fromHash);
-  useEffect(() => {
-    const onChange = () => setSection(fromHash());
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
-  }, []);
-  return [section, (id) => (location.hash = `#/${id}`)];
-}
-
 function Notice({ title, text, retry }: { title: string; text: string; retry?: () => void }) {
   return (
     <main className="notice">
@@ -53,7 +47,7 @@ function Notice({ title, text, retry }: { title: string; text: string; retry?: (
 
 export function App() {
   const [access, retry] = useAccess();
-  const [section, open] = useSection();
+  const route = useRoute();
 
   if (access === "outside")
     return (
@@ -65,26 +59,30 @@ export function App() {
     return <Notice title="Не вдалося з'єднатися" text="Бот не відповів. Спробуй ще раз." retry={retry} />;
   if (access === "checking") return <Notice title="Завантаження…" text="" />;
 
-  const current = sections.find((s) => s.id === section)!;
+  const tabs = route.screen === "list";
   return (
-    <>
-      <main className="screen">
-        <h1>{current.title}</h1>
-        <p className="empty">{current.hint}</p>
-      </main>
-      <nav className="tabs">
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            className={s.id === section ? "active" : ""}
-            aria-current={s.id === section ? "page" : undefined}
-            onClick={() => open(s.id)}
-          >
-            <span aria-hidden="true">{s.icon}</span>
-            {s.title}
-          </button>
-        ))}
-      </nav>
-    </>
+    <div className="app">
+      {route.screen === "entry" ? (
+        <Entry key={route.id} id={route.id} />
+      ) : route.screen === "search" ? (
+        <Search key={route.section} section={route.section} initial={route.q} />
+      ) : route.section === "diary" ? (
+        <Diary />
+      ) : route.section === "ideas" ? (
+        <Ideas />
+      ) : (
+        <Media />
+      )}
+      {tabs && (
+        <nav className="tabs" aria-label="Розділи">
+          {sections.map((s) => (
+            <a key={s.id} href={sectionHash(s.id)} aria-current={s.id === route.section ? "page" : undefined}>
+              <Icon name={s.icon} />
+              {s.title}
+            </a>
+          ))}
+        </nav>
+      )}
+    </div>
   );
 }

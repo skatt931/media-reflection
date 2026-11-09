@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkInitData, INIT_DATA_MAX_AGE } from "../src/miniapp/auth.ts";
+import { JournalStore } from "../src/journal.ts";
 import { MINIAPP_HOST, miniAppPort, startMiniApp } from "../src/miniapp/server.ts";
 
 const TOKEN = "123456:test-token";
@@ -190,4 +191,71 @@ test("static files: no path escapes the build folder", async () => {
     req.end();
   });
   assert.notEqual(status, 200);
+});
+
+test("API: diary and ideas from the journal, only for the owner", async () => {
+  const journal = new JournalStore(":memory:");
+  journal.add({
+    date: "2026-11-01",
+    body: "Полагодив велосипед.\n\nДалі був чай.",
+    source: "import",
+    sourceName: "01.11.26.md",
+  });
+  journal.add({ date: "2026-11-07", body: "Ранкова прогулянка.", source: "bot" });
+  journal.addIdea({ body: "Купити змазку", source: "text", date: "2026-11-07", time: "09:30" });
+  const server = await startMiniApp(
+    { token: TOKEN, owner: OWNER, staticDir: dir, journal, now: () => NOW },
+    0,
+  );
+  assert.ok(server);
+  const origin = `http://${MINIAPP_HOST}:${(server.address() as AddressInfo).port}`;
+  const headers = auth(sign(fields()));
+  const get = async (path: string, h: Record<string, string> = headers) => {
+    const response = await fetch(`${origin}${path}`, { headers: h });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    assert.equal((await get("/api/diary", {})).status, 401);
+    assert.equal((await get("/api/ideas", {})).status, 401);
+    assert.equal((await get("/api/diary/1", {})).status, 401);
+
+    const list = await get("/api/diary");
+    assert.equal(list.status, 200);
+    assert.deepEqual(
+      list.body.entries.map((e: { id: number; date: string }) => [e.id, e.date]),
+      [
+        [2, "2026-11-07"],
+        [1, "2026-11-01"],
+      ],
+    );
+    assert.deepEqual(
+      (await get(`/api/diary?q=${encodeURIComponent("велосипеда")}`)).body.entries.map(
+        (e: { id: number }) => e.id,
+      ),
+      [1],
+    );
+
+    const entry = await get("/api/diary/1");
+    assert.equal(entry.status, 200);
+    assert.equal(entry.body.body, "Полагодив велосипед.\n\nДалі був чай.");
+    assert.deepEqual(entry.body.newer, { id: 2, date: "2026-11-07" });
+    assert.equal((await get("/api/diary/99")).status, 404);
+    assert.equal((await get("/api/diary/abc")).status, 404);
+
+    const ideas = await get("/api/ideas");
+    assert.deepEqual(ideas.body.ideas, [{ id: 1, date: "2026-11-07", time: "09:30", body: "Купити змазку" }]);
+    assert.equal((await get(`/api/ideas?q=${encodeURIComponent("змазки")}`)).body.ideas.length, 1);
+    assert.equal((await get("/api/ideas?q=nothing")).body.ideas.length, 0);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+    journal.close();
+  }
+});
+
+test("API: without a journal the diary and ideas are unavailable, the rest works", async () => {
+  const headers = auth(sign(fields()));
+  assert.equal((await fetch(`${base}/api/diary`, { headers })).status, 503);
+  assert.equal((await fetch(`${base}/api/ideas`, { headers })).status, 503);
+  assert.equal((await fetch(`${base}/api/me`, { headers })).status, 200);
 });

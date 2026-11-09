@@ -2,14 +2,19 @@ import { dirname, extname } from "node:path";
 import { localDate, reactions, statuses, types } from "../fields.ts";
 import { retrieve } from "../search.ts";
 import type { Store } from "../store.ts";
+import {
+  NO_REACTION,
+  type Labels,
+  type LibraryCard,
+  type LibraryItem,
+  type LibraryList,
+} from "./library-types.ts";
 
 type Row = Record<string, any>;
 
 // Words for the interface come from the one place that owns them, so the app and the bot never disagree.
-const labels = { types, statuses, reactions };
+const labels: Labels = { types, statuses, reactions };
 
-// A reaction filter value for items without a reaction.
-export const NO_REACTION = "none";
 const QUERY_MAX = 200;
 
 const COVER_TYPES: Record<string, string> = {
@@ -48,7 +53,7 @@ export function libraryFilter(params: URLSearchParams): LibraryFilter {
 }
 
 // Only what the screens show: bookkeeping fields (manual locks, metadata versions) stay on the server.
-function card(s: Store, item: Row, unreviewed: Set<string>) {
+function card(s: Store, item: Row, unreviewed: Set<string>): LibraryCard {
   return {
     id: item.id as string,
     title: item.title as string,
@@ -64,7 +69,7 @@ function card(s: Store, item: Row, unreviewed: Set<string>) {
   };
 }
 
-export function libraryList(s: Store, filter: LibraryFilter, today = localDate()) {
+export function libraryList(s: Store, filter: LibraryFilter, today = localDate()): LibraryList {
   const unreviewed = new Set<string>(s.unreflected(today).map((i) => i.id));
   const all = s.items();
   const counts = { saved: 0, unreviewed: unreviewed.size, types: {} as Record<string, number> };
@@ -102,7 +107,7 @@ export function libraryList(s: Store, filter: LibraryFilter, today = localDate()
   return { items, total: all.length, counts, labels };
 }
 
-export function libraryItem(s: Store, id: string) {
+export function libraryItem(s: Store, id: string): LibraryItem | undefined {
   const item = s.item(id);
   if (!item) return undefined;
   return {

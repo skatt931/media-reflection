@@ -1,10 +1,11 @@
+// The shape of the library API, shared by the server and the screens. No imports: the screens bundle this file.
 export type Labels = {
   types: Record<string, string>;
   statuses: Record<string, string>;
   reactions: Record<string, string>;
 };
 
-export type Card = {
+export type LibraryCard = {
   id: string;
   title: string;
   type: string;
@@ -18,14 +19,14 @@ export type Card = {
   unreviewed: boolean;
 };
 
-export type LibraryResponse = {
-  items: Card[];
+export type LibraryList = {
+  items: LibraryCard[];
   total: number;
   counts: { saved: number; unreviewed: number; types: Record<string, number> };
   labels: Labels;
 };
 
-export type Detail = Card & {
+export type LibraryItem = LibraryCard & {
   url: string | null;
   summary: string | null;
   description: string | null;
@@ -34,15 +35,5 @@ export type Detail = Card & {
   labels: Labels;
 };
 
-export type Filters = {
-  types: string[];
-  statuses: string[];
-  reactions: string[];
-  unreviewed: boolean;
-};
-
+// A reaction filter value for items without a reaction.
 export const NO_REACTION = "none";
-export const noFilters: Filters = { types: [], statuses: [], reactions: [], unreviewed: false };
-
-export const isFiltered = (f: Filters) =>
-  f.types.length > 0 || f.statuses.length > 0 || f.reactions.length > 0 || f.unreviewed;

@@ -1,36 +1,25 @@
 import { useEffect, useState } from "react";
-import { ApiError, get } from "./api.ts";
-import { Detail } from "./library/Detail.tsx";
-import { DiaryTabIcon, IdeasTabIcon, MediaTabIcon } from "./library/icons.tsx";
-import { Library } from "./library/Library.tsx";
-import { initData, webApp } from "./telegram.ts";
+import { ApiError, get, mock } from "./api.ts";
+import { Icon, type IconName } from "./icons.tsx";
+import { sectionHash, useRoute, type Section } from "./router.ts";
+import { initData } from "./telegram.ts";
+import { Diary } from "./screens/Diary.tsx";
+import { Entry } from "./screens/Entry.tsx";
+import { Ideas } from "./screens/Ideas.tsx";
+import { Material } from "./screens/Material.tsx";
+import { Media } from "./screens/Media.tsx";
+import { Search } from "./screens/Search.tsx";
 
-const sections = [
-  { id: "diary", icon: <DiaryTabIcon />, title: "Щоденник", hint: "Тут будуть записи щоденника." },
-  { id: "media", icon: <MediaTabIcon />, title: "Медіатека", hint: "" },
-  { id: "ideas", icon: <IdeasTabIcon />, title: "Ідеї", hint: "Тут будуть ідеї." },
-] as const;
-type SectionId = (typeof sections)[number]["id"];
-
-// #/media is the list, #/media/<id> a material.
-type Route = { section: SectionId; id: string | null };
-
-function fromHash(): Route {
-  const [, name, id] = location.hash.split("/");
-  const section = sections.find((s) => s.id === name)?.id ?? "diary";
-  let material: string | null = null;
-  try {
-    material = section === "media" && id ? decodeURIComponent(id) : null;
-  } catch {
-    // A malformed id is shown as the list.
-  }
-  return { section, id: material };
-}
+const sections: { id: Section; icon: IconName; title: string }[] = [
+  { id: "diary", icon: "diary", title: "Щоденник" },
+  { id: "media", icon: "library", title: "Медіатека" },
+  { id: "ideas", icon: "ideas", title: "Ідеї" },
+];
 
 type Access = "checking" | "ok" | "outside" | "denied" | "failed";
 
 function useAccess(): [Access, () => void] {
-  const [access, setAccess] = useState<Access>(initData ? "checking" : "outside");
+  const [access, setAccess] = useState<Access>(mock ? "ok" : initData ? "checking" : "outside");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!initData) return;
@@ -47,31 +36,6 @@ function useAccess(): [Access, () => void] {
   return [access, () => setAttempt((n) => n + 1)];
 }
 
-function useRoute(): [Route, (id: SectionId) => void] {
-  const [route, setRoute] = useState(fromHash);
-  useEffect(() => {
-    const onChange = () => setRoute(fromHash());
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
-  }, []);
-  return [route, (id) => (location.hash = `#/${id}`)];
-}
-
-// Telegram's own back button, shown only on a material.
-function useBackButton(visible: boolean) {
-  useEffect(() => {
-    const button = webApp?.BackButton;
-    if (!button || !visible) return;
-    const back = () => (history.length > 1 ? history.back() : (location.hash = "#/media"));
-    button.show();
-    button.onClick(back);
-    return () => {
-      button.offClick(back);
-      button.hide();
-    };
-  }, [visible]);
-}
-
 function Notice({ title, text, retry }: { title: string; text: string; retry?: () => void }) {
   return (
     <main className="notice">
@@ -84,8 +48,7 @@ function Notice({ title, text, retry }: { title: string; text: string; retry?: (
 
 export function App() {
   const [access, retry] = useAccess();
-  const [{ section, id }, open] = useRoute();
-  useBackButton(access === "ok" && id !== null);
+  const route = useRoute();
 
   if (access === "outside")
     return (
@@ -97,32 +60,32 @@ export function App() {
     return <Notice title="Не вдалося з'єднатися" text="Бот не відповів. Спробуй ще раз." retry={retry} />;
   if (access === "checking") return <Notice title="Завантаження…" text="" />;
 
-  const current = sections.find((s) => s.id === section)!;
+  const tabs = route.screen === "list";
   return (
-    <>
-      {section === "media" && <Library hidden={id !== null} />}
-      {section === "media" && id !== null && <Detail id={id} />}
-      {section !== "media" && (
-        <main className="screen">
-          <h1>{current.title}</h1>
-          <p className="empty">{current.hint}</p>
-        </main>
+    <div className="app">
+      {route.screen === "entry" ? (
+        <Entry key={route.id} id={route.id} />
+      ) : route.screen === "material" ? (
+        <Material key={route.id} id={route.id} />
+      ) : route.screen === "search" ? (
+        <Search key={route.section} section={route.section} initial={route.q} />
+      ) : route.section === "diary" ? (
+        <Diary />
+      ) : route.section === "ideas" ? (
+        <Ideas />
+      ) : (
+        <Media />
       )}
-      {id === null && (
-        <nav className="tabs">
+      {tabs && (
+        <nav className="tabs" aria-label="Розділи">
           {sections.map((s) => (
-            <button
-              key={s.id}
-              className={s.id === section ? "active" : ""}
-              aria-current={s.id === section ? "page" : undefined}
-              onClick={() => open(s.id)}
-            >
-              {s.icon}
+            <a key={s.id} href={sectionHash(s.id)} aria-current={s.id === route.section ? "page" : undefined}>
+              <Icon name={s.icon} />
               {s.title}
-            </button>
+            </a>
           ))}
         </nav>
       )}
-    </>
+    </div>
   );
 }

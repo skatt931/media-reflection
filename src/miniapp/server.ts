@@ -2,8 +2,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile, stat } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
+import type { JournalStore } from "../journal.ts";
 import type { Store } from "../store.ts";
 import { checkInitData } from "./auth.ts";
+import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
 import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
 
 // Listens on loopback only: the outside world reaches it through `tailscale serve <port>`.
@@ -14,7 +16,9 @@ export const MINIAPP_DIST = resolve(import.meta.dirname, "../../miniapp-dist");
 export type MiniAppOptions = {
   token: string;
   owner: number;
-  // The media library the screens read. Read-only: nothing here writes to it.
+  // Diary and ideas; without it those routes answer 503 and the rest of the app still works.
+  journal?: JournalStore;
+  // The media library the screens read. Read-only: nothing here writes to it. Without it: 503.
   store?: Store;
   staticDir?: string;
   now?: () => Date;
@@ -57,35 +61,55 @@ function json(res: ServerResponse, status: number, value: unknown) {
   });
 }
 
+const diaryRows = (journal: JournalStore) =>
+  journal.all("SELECT id, entry_date, body FROM journal_entries") as DiaryRow[];
+const ideaRows = (journal: JournalStore) =>
+  journal.all("SELECT id, idea_date, idea_time, body FROM ideas") as IdeaRow[];
+
 const LIBRARY_ID = /^\/api\/library\/([^/]+?)(\/cover)?$/;
+const notFound = (res: ServerResponse) => json(res, 404, { error: "not_found" });
+const unavailable = (res: ServerResponse) => json(res, 503, { error: "unavailable" });
+
+async function library(url: URL, res: ServerResponse, store: Store | undefined) {
+  if (!store) return unavailable(res);
+  if (url.pathname === "/api/library")
+    return json(res, 200, libraryList(store, libraryFilter(url.searchParams)));
+  const match = LIBRARY_ID.exec(url.pathname);
+  if (!match) return notFound(res);
+  let id: string;
+  try {
+    id = decodeURIComponent(match[1]);
+  } catch {
+    return notFound(res);
+  }
+  if (match[2]) {
+    const cover = libraryCover(store, id);
+    if (!cover) return notFound(res);
+    return send(res, 200, await readFile(cover.path), {
+      "content-type": cover.type,
+      "cache-control": "private, max-age=3600",
+    });
+  }
+  const item = libraryItem(store, id);
+  return item ? json(res, 200, item) : notFound(res);
+}
 
 // Every route gets here only after initData was verified.
 async function route(url: URL, userId: number, res: ServerResponse, options: MiniAppOptions) {
-  const { pathname } = url;
-  if (pathname === "/api/me") return json(res, 200, { userId });
-  const store = options.store;
-  if (store && pathname === "/api/library")
-    return json(res, 200, libraryList(store, libraryFilter(url.searchParams)));
-  const match = store ? LIBRARY_ID.exec(pathname) : null;
-  if (store && match) {
-    let id: string;
-    try {
-      id = decodeURIComponent(match[1]);
-    } catch {
-      return json(res, 404, { error: "not_found" });
-    }
-    if (match[2]) {
-      const cover = libraryCover(store, id);
-      if (!cover) return json(res, 404, { error: "not_found" });
-      return send(res, 200, await readFile(cover.path), {
-        "content-type": cover.type,
-        "cache-control": "private, max-age=3600",
-      });
-    }
-    const item = libraryItem(store, id);
-    return item ? json(res, 200, item) : json(res, 404, { error: "not_found" });
+  const path = url.pathname;
+  if (path === "/api/me") return json(res, 200, { userId });
+  if (path === "/api/library" || path.startsWith("/api/library/")) return library(url, res, options.store);
+  const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
+  if (path !== "/api/diary" && path !== "/api/ideas" && !diary) return notFound(res);
+  const journal = options.journal;
+  if (!journal) return unavailable(res);
+  const q = url.searchParams.get("q") ?? undefined;
+  if (path === "/api/diary") return json(res, 200, diaryList(diaryRows(journal), q));
+  if (diary) {
+    const entry = diaryEntry(diaryRows(journal), Number(diary[1]));
+    return entry ? json(res, 200, entry) : notFound(res);
   }
-  return json(res, 404, { error: "not_found" });
+  return json(res, 200, ideaList(ideaRows(journal), q));
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL, options: MiniAppOptions) {

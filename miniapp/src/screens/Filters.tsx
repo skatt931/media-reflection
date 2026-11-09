@@ -1,61 +1,73 @@
-import { useEffect, type ReactNode } from "react";
-import { ReactionIcon } from "./icons.tsx";
-import { NO_REACTION, isFiltered, noFilters, type Filters, type Labels } from "./types.ts";
+import { useEffect, useRef, type ReactNode } from "react";
+import { NO_REACTION, type Labels } from "../../../src/miniapp/library-types.ts";
+import { useBack } from "../hooks.ts";
+import { Icon, type IconName } from "../icons.tsx";
 
-type Props = {
-  filters: Filters;
-  counts: { types: Record<string, number> };
-  labels: Labels;
-  shown: number;
-  onChange: (filters: Filters) => void;
-  onClose: () => void;
-};
-
-const toggle = (list: string[], value: string) =>
+export type Filters = { types: string[]; statuses: string[]; reactions: string[]; unreviewed: boolean };
+export const noFilters: Filters = { types: [], statuses: [], reactions: [], unreviewed: false };
+export const isFiltered = (f: Filters) =>
+  f.types.length > 0 || f.statuses.length > 0 || f.reactions.length > 0 || f.unreviewed;
+export const toggle = (list: string[], value: string) =>
   list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <fieldset>
+    <fieldset className="fgrp">
       <legend>{title}</legend>
-      <div className="options">{children}</div>
+      <div className="opts">{children}</div>
     </fieldset>
   );
 }
 
 function Option({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" className="chip" aria-pressed={on} onClick={onClick}>
+    <button type="button" className="opt" aria-pressed={on} onClick={onClick}>
       {children}
     </button>
   );
 }
 
-export function FilterSheet({ filters, counts, labels, shown, onChange, onClose }: Props) {
+type Props = {
+  filters: Filters;
+  types: string[];
+  labels: Labels;
+  shown: number;
+  onChange: (filters: Filters) => void;
+  onClose: () => void;
+};
+
+// Changes apply at once to the list behind the sheet; the button only closes it and says how many are left.
+export function FilterSheet({ filters, types, labels, shown, onChange, onClose }: Props) {
+  useBack(true, onClose);
+  const sheet = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    sheet.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.body.classList.add("locked");
     window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.classList.remove("locked");
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const types = Object.entries(counts.types).sort((a, b) => b[1] - a[1]);
   return (
-    <div className="sheet-wrap">
-      <div className="backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-label="Фільтри">
-        <div className="sheet-head">
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div
+        className="sheet fsheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Фільтри"
+        tabIndex={-1}
+        ref={sheet}
+      >
+        <div className="grab" aria-hidden="true" />
+        <div className="sheet-top">
           <h2>Фільтри</h2>
-          <button className="link" disabled={!isFiltered(filters)} onClick={() => onChange(noFilters)}>
+          <button className="reset" disabled={!isFiltered(filters)} onClick={() => onChange(noFilters)}>
             Скинути
           </button>
         </div>
-        <div className="sheet-body">
+        <div className="fbody">
           <Group title="Тип">
-            {types.map(([type]) => (
+            {types.map((type) => (
               <Option
                 key={type}
                 on={filters.types.includes(type)}
@@ -83,7 +95,7 @@ export function FilterSheet({ filters, counts, labels, shown, onChange, onClose 
                 on={filters.reactions.includes(reaction)}
                 onClick={() => onChange({ ...filters, reactions: toggle(filters.reactions, reaction) })}
               >
-                <ReactionIcon reaction={reaction} filled={false} />
+                <Icon name={reaction as IconName} size={17} />
                 {label}
               </Option>
             ))}
@@ -95,10 +107,10 @@ export function FilterSheet({ filters, counts, labels, shown, onChange, onClose 
             </Option>
           </Group>
         </div>
-        <button className="button wide" onClick={onClose}>
+        <button className="go" onClick={onClose}>
           {shown > 0 ? `Показати ${shown}` : "Нічого не знайдено"}
         </button>
       </div>
-    </div>
+    </>
   );
 }

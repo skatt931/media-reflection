@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="uk" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B · Editorial, перший рядок як заголовок</title>
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="b.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="data.js"></script>
+<script>
+const M = MOCK;
+const { icon, host, phone, esc, mark } = M;
+
+const head = (active, { cal = false, search = true } = {}) => `
+  <header class="top">
+    <nav class="sections" aria-label="Розділи"><a ${active === "diary" ? 'aria-current="page"' : ""}>Щоденник</a><a ${active === "ideas" ? 'aria-current="page"' : ""}>Ідеї</a></nav>
+    <div class="acts">${search ? `<button aria-label="Пошук">${icon("search")}</button>` : ""}${active === "diary" ? `<button aria-label="Рік" ${cal ? 'aria-pressed="true"' : ""}>${icon("calendar")}</button>` : ""}</div>
+  </header>`;
+
+const entry = (e, q) => {
+  const t = e.text.join(" "), x = M.d(e.date);
+  const head1 = M.firstSentence(t);
+  let rest = M.restAfterFirst(t);
+  if (q) { const i = t.toLowerCase().indexOf(q); rest = i > 90 ? "…" + t.slice(t.indexOf(" ", i - 70) + 1) : rest; }
+  return `<a class="entry"><time>${x.getDate()} ${M.MONTHS_GEN[x.getMonth()]} · ${M.WD_SHORT[x.getDay()]}</time><h3>${esc(head1)}</h3>${rest ? `<p>${q ? mark(rest, q) : esc(rest)}</p>` : ""}</a>`;
+};
+
+const listBody = () => M.byMonth.filter((g) => g.year === 2026 && g.month >= 8).map((g) => `
+  <div class="mh"><h2>${M.cap(M.MONTHS[g.month])} ${g.year}</h2><span>${M.records(g.items.length)}</span></div>
+  ${g.items.map((e) => entry(e)).join("")}`).join("");
+
+const rail = () => `<div class="rail" aria-label="Місяці">${["лис","жов","вер","сер","лип","чер"].map((m, i) => `<span class="${i === 0 ? "on" : ""}">${m}</span>`).join("")}</div>`;
+
+const timeline = (extra = "", cal = false) => phone(`${host()}
+  <main class="scr">${head("diary", { cal })}
+    <aside class="again"><small>Рік тому, 9 листопада</small><p>${esc(M.entries.find((x) => x.date === "2025-11-09").text[0])}</p></aside>
+    <div class="list">${listBody()}</div>${rail()}
+  </main>${extra}`);
+
+const calendar = () => {
+  const has = new Set(M.entries.filter((e) => e.date.startsWith("2026")).map((e) => e.date));
+  const mo = [...Array(12)].map((_, m) => {
+    const off = (new Date(2026, m, 1).getDay() + 6) % 7, n = new Date(2026, m + 1, 0).getDate();
+    const count = [...has].filter((d) => +d.slice(5, 7) === m + 1).length;
+    const dots = [...Array(off).fill("<i style='visibility:hidden'></i>")];
+    for (let d = 1; d <= n; d++) {
+      const iso = `2026-${M.pad(m + 1)}-${M.pad(d)}`;
+      dots.push(`<i class="${has.has(iso) ? "e" : ""} ${iso === M.TODAY ? "t" : ""}"></i>`);
+    }
+    return `<div class="mo ${count ? "has" : ""} ${m === 10 ? "cur" : ""}"><h3>${M.MONTHS_ABBR[m][0].toUpperCase() + M.MONTHS_ABBR[m].slice(1)}${count ? `<small>${count}</small>` : ""}</h3><div class="dots">${dots.join("")}</div></div>`;
+  });
+  return timeline(`<div class="dim"></div>
+    <div class="sheet" role="dialog" aria-label="Рік">
+      <div class="grab"></div>
+      <div class="sheet-top"><h2>2026</h2><div class="acts"><button aria-label="Попередній рік">${icon("back", 20)}</button><button aria-label="Наступний рік">${icon("chevron", 20)}</button></div></div>
+      <div class="year">${mo.join("")}</div>
+      <div class="sheet-foot"><span>${M.records(has.size)} цього року</span><button>Сьогодні</button></div>
+    </div>`, true);
+};
+
+const reader = () => {
+  const e = M.entries.find((x) => x.date === "2026-11-01"), x = M.d(e.date);
+  const t = e.text, h = M.firstSentence(t[0]), r0 = M.restAfterFirst(t[0]);
+  return phone(`${host({ back: true })}
+    <main class="scr"><article class="reader">
+      <time>${x.getDate()} ${M.MONTHS_GEN[x.getMonth()]} ${x.getFullYear()} · ${M.WD_FULL[x.getDay()]}</time>
+      <h1>${esc(h)}</h1>
+      <p>${esc(r0)}</p>${t.slice(1).map((p) => `<p>${esc(p)}</p>`).join("")}
+    </article></main>
+    <nav class="pager"><a>${icon("back", 18)}<span>25 жовтня</span></a><a><span>7 листопада</span>${icon("chevron", 18)}</a></nav><div class="inset"></div>`);
+};
+
+const search = () => {
+  const q = "велосипед", hits = M.entries.filter((e) => e.text.join(" ").toLowerCase().includes(q));
+  return phone(`${host()}
+    <main class="scr">
+      <div class="field"><div class="input">${icon("search", 20)}<span class="val">${q}<i class="caret"></i></span>${icon("clear", 20)}</div><button class="cancel">Скасувати</button></div>
+      <p class="found">${M.records(hits.length)}</p>
+      <div class="hits">${hits.map((e) => entry(e, q)).join("")}</div>
+    </main>`);
+};
+
+const ideas = () => {
+  const groups = [];
+  M.ideas.forEach((i) => { const l = M.dayLabel(i.at); let g = groups.find((x) => x.l === l); if (!g) groups.push((g = { l, items: [] })); g.items.push(i); });
+  return phone(`${host()}
+    <main class="scr ideas">${head("ideas")}
+      ${groups.map((g) => `<h2 class="gh">${g.l}</h2>${g.items.map((i) => `<div class="idea"><p>${esc(i.text)}</p><time>${M.time(i.at)}</time></div>`).join("")}`).join("")}
+    </main>`);
+};
+
+M.mount(document.getElementById("app"), M.board("B · Editorial, перший рядок як заголовок",
+  "У щоденника немає назв, тож перше речення стає заголовком запису. Розділи, місяці й рік видно без нижньої панелі: заголовок-перемикач угорі, рейка місяців збоку, у шторці весь рік крапками. Вигадані записи.",
+  [["Щоденник", timeline()], ["Рік (шторка)", calendar()], ["Запис", reader()], ["Пошук", search()], ["Ідеї", ideas()]]));
+</script>
+</body>
+</html>

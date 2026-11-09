@@ -4,6 +4,8 @@ import { handle, weekly, reviews, diaryAutosave, commands, type Send } from "./b
 import { JournalStore } from "./journal.ts";
 import { createRuntime } from "./runtime.ts";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { Server } from "node:http";
+import { miniAppPort, startMiniApp } from "./miniapp/server.ts";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const owner = Number(process.env.TELEGRAM_USER_ID);
@@ -125,8 +127,26 @@ const send: Send = async (text, keyboard, out = {}) => {
   return sent.message_id;
 };
 
+// The menu button opens the Mini App; the HTTP server inside the bot serves it (exposed by `tailscale serve`).
+async function openMiniApp() {
+  try {
+    const port = miniAppPort(process.env.MINIAPP_PORT);
+    if (port) miniApp = await startMiniApp({ token: token!, owner }, port);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : "Mini App не запущено.");
+  }
+  const url = (process.env.MINIAPP_URL ?? "").trim();
+  if (!url) return;
+  if (!/^https:\/\/[^\s/]+/.test(url)) return console.error("MINIAPP_URL: потрібна HTTPS-адреса.");
+  await api("setChatMenuButton", {
+    chat_id: owner,
+    menu_button: { type: "web_app", text: "Відкрити", web_app: { url } },
+  }).catch(() => console.error("Не вдалося налаштувати кнопку меню."));
+}
+
 let store: Store | undefined;
 let journal: JournalStore | undefined;
+let miniApp = null as Server | null;
 try {
   const me = await api("getMe");
   const hook = await api("getWebhookInfo");
@@ -135,6 +155,7 @@ try {
   store = new Store(process.env.DB_PATH ?? "./data/media.sqlite");
   store.prune();
   await api("setMyCommands", { commands }).catch(() => console.error("Не вдалося оновити меню команд."));
+  await openMiniApp();
   journal = new JournalStore(process.env.JOURNAL_DB_PATH ?? "./data/journal.sqlite");
   const runtime = createRuntime(store);
   const services = { ...runtime.services, journal };
@@ -189,6 +210,8 @@ try {
     process.exitCode = 1;
   }
 } finally {
+  miniApp?.closeAllConnections();
+  miniApp?.close();
   store?.close();
   journal?.close();
 }

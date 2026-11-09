@@ -26,6 +26,14 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Committed Mini App build is current
+        run: |
+          npm run miniapp:build
+          if [ -n "$(git status --porcelain -- miniapp-dist)" ]; then
+            git status --short -- miniapp-dist
+            echo "miniapp-dist/ не збігається зі збіркою: виконай npm run miniapp:build і закоміть" >&2
+            exit 1
+          fi
 
   deploy:
     needs: test

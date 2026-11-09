@@ -1,0 +1,103 @@
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --text: var(--tg-theme-text-color, #000000);
+  --hint: var(--tg-theme-hint-color, #8a8a8e);
+  --accent: var(--tg-theme-button-color, #2481cc);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --bar: var(--tg-theme-bottom-bar-bg-color, var(--tg-theme-secondary-bg-color, #f1f1f3));
+  --separator: var(--tg-theme-section-separator-color, rgba(128, 128, 128, 0.25));
+  /* Notches and home indicator (device) plus Telegram's own header and controls in fullscreen. */
+  --inset-top: calc(
+    max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px)) +
+      var(--tg-content-safe-area-inset-top, 0px)
+  );
+  --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
+  --inset-left: max(env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px));
+  --inset-right: max(env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px));
+  --tabs-height: 56px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    16px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 24px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+}
+
+.screen,
+.notice {
+  min-height: 100vh;
+  padding: calc(var(--inset-top) + 16px) calc(var(--inset-right) + 16px) 16px calc(var(--inset-left) + 16px);
+}
+
+.screen {
+  padding-bottom: calc(var(--tabs-height) + var(--inset-bottom) + 16px);
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.notice p,
+.empty {
+  margin: 0;
+  color: var(--hint);
+}
+
+.notice button {
+  margin-top: 16px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.tabs {
+  position: fixed;
+  inset: auto 0 0;
+  display: flex;
+  padding: 0 var(--inset-right) var(--inset-bottom) var(--inset-left);
+  background: var(--bar);
+  border-top: 1px solid var(--separator);
+}
+
+.tabs button {
+  flex: 1;
+  height: var(--tabs-height);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--hint);
+}
+
+.tabs button.active {
+  color: var(--accent);
+}

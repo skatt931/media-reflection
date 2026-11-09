@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 
 type Row = Record<string, any>;
 export type JournalSource = "import" | "bot";
+export type IdeaSource = "text" | "voice";
 
 // Additive only: a new version appends a step, existing steps never change.
 const migrations = [
@@ -42,6 +43,19 @@ const migrations = [
   // The file name a bot entry got in the Obsidian export; set once and never reused.
   `ALTER TABLE journal_entries ADD COLUMN export_name TEXT;
    CREATE UNIQUE INDEX journal_export_name ON journal_entries(export_name) WHERE export_name IS NOT NULL;`,
+  // Quick ideas: a separate entity that lives next to the diary. `update_id` makes a replayed Telegram update harmless.
+  `CREATE TABLE ideas(
+     id INTEGER PRIMARY KEY,
+     update_id INTEGER UNIQUE,
+     body TEXT NOT NULL,
+     source TEXT NOT NULL CHECK(source IN ('text','voice')),
+     idea_date TEXT NOT NULL,
+     idea_time TEXT NOT NULL,
+     body_sha256 TEXT NOT NULL,
+     export_name TEXT,
+     created_at TEXT NOT NULL
+   );
+   CREATE UNIQUE INDEX ideas_export_name ON ideas(export_name) WHERE export_name IS NOT NULL;`,
 ];
 export const journalSchemaVersion = migrations.length;
 
@@ -176,6 +190,45 @@ export class JournalStore {
   }
   discardDraft() {
     this.run("DELETE FROM journal_draft WHERE id=1");
+  }
+  // `date`/`time` are the local day and minute the idea was written; null when this update was already saved.
+  addIdea(idea: { body: string; source: IdeaSource; date: string; time: string; update?: number }) {
+    const result = this.run(
+      "INSERT OR IGNORE INTO ideas(update_id,body,source,idea_date,idea_time,body_sha256,created_at) VALUES(?,?,?,?,?,?,?)",
+      idea.update ?? null,
+      idea.body,
+      idea.source,
+      idea.date,
+      idea.time,
+      sha256(idea.body),
+      new Date().toISOString(),
+    );
+    return Number(result.changes) ? Number(result.lastInsertRowid) : null;
+  }
+  idea(id: number) {
+    return this.all("SELECT * FROM ideas WHERE id=?", id)[0];
+  }
+  ideaCount() {
+    return Number(this.all("SELECT count(*) AS n FROM ideas")[0].n);
+  }
+  // The list runs from the newest idea to the oldest; "next" is one step older, both ends wrap around.
+  newestIdea() {
+    return this.all("SELECT * FROM ideas ORDER BY id DESC LIMIT 1")[0];
+  }
+  ideaStep(id: number, direction: "newer" | "older") {
+    const [cmp, order] = direction === "older" ? ["<", "DESC"] : [">", "ASC"];
+    // Past the oldest idea comes the newest, past the newest the oldest: the same order without the bound.
+    return (
+      this.all(`SELECT * FROM ideas WHERE id${cmp}? ORDER BY id ${order} LIMIT 1`, id)[0] ??
+      this.all(`SELECT * FROM ideas ORDER BY id ${order} LIMIT 1`)[0]
+    );
+  }
+  // 1 for the newest idea.
+  ideaPosition(id: number) {
+    return Number(this.all("SELECT count(*) AS n FROM ideas WHERE id>=?", id)[0].n);
+  }
+  removeIdea(id: number) {
+    return Number(this.run("DELETE FROM ideas WHERE id=?", id).changes) > 0;
   }
   imported() {
     return this.all("SELECT * FROM journal_entries WHERE source='import' ORDER BY entry_date,source_name");
@@ -332,6 +385,52 @@ export function exportJournal(store: JournalStore, dir: string, dryRun = false):
       report.written.push(name);
     }
     report.files.push({ name, sha256: sha256(Buffer.from(entry.body, "utf8")) });
+  }
+  return report;
+}
+
+// "2026-11-05", "14:30", 1 → "05.11.26 14-30.md" (a colon is not allowed in file names); 2 → "05.11.26 14-30 (2).md".
+export function ideaExportName(date: string, time: string, n = 1) {
+  const [year, month, day] = date.split("-");
+  return `${day}.${month}.${year.slice(2)} ${time.replace(":", "-")}${n > 1 ? ` (${n})` : ""}.md`;
+}
+
+// The same delivery as the diary, one note per idea: names are given once and recorded before the file is
+// written, an existing file is never rewritten, and the note of an idea deleted in the bot moves to `.deleted/`.
+export function exportIdeas(store: JournalStore, dir: string, dryRun = false): ExportReport {
+  const report: ExportReport = { named: [], written: [], retired: [], files: [] };
+  const present = markdownFiles(dir);
+  const used = new Set([...present, ...markdownFiles(join(dir, retiredDir))]);
+  for (const row of store.all("SELECT export_name FROM ideas WHERE export_name IS NOT NULL"))
+    used.add(row.export_name);
+  const ideas = store.all("SELECT * FROM ideas ORDER BY id");
+  const assign = () => {
+    for (const idea of ideas) {
+      if (idea.export_name) continue;
+      let n = 1;
+      while (used.has(ideaExportName(idea.idea_date, idea.idea_time, n))) n++;
+      idea.export_name = ideaExportName(idea.idea_date, idea.idea_time, n);
+      used.add(idea.export_name);
+      report.named.push(idea.export_name);
+      if (!dryRun) store.run("UPDATE ideas SET export_name=? WHERE id=?", idea.export_name, idea.id);
+    }
+  };
+  if (dryRun) assign();
+  else store.transaction(assign);
+
+  const current = new Set(ideas.map((idea) => idea.export_name as string));
+  if (!dryRun) mkdirSync(join(dir, retiredDir), { recursive: true, mode: 0o700 });
+  for (const name of present.filter((name) => !current.has(name))) {
+    if (!dryRun) renameSync(join(dir, name), join(dir, retiredDir, name));
+    report.retired.push(name);
+  }
+  for (const idea of ideas) {
+    const name = idea.export_name as string;
+    if (!present.includes(name)) {
+      if (!dryRun) writeFileSync(join(dir, name), idea.body, { flag: "wx" });
+      report.written.push(name);
+    }
+    report.files.push({ name, sha256: sha256(Buffer.from(idea.body, "utf8")) });
   }
   return report;
 }

@@ -80,6 +80,19 @@ async function sendPhoto(text: string, keyboard: unknown, out: NonNullable<Param
 }
 
 const send: Send = async (text, keyboard, out = {}) => {
+  if (out.react) {
+    try {
+      await api("setMessageReaction", {
+        chat_id: owner,
+        message_id: out.react,
+        reaction: [{ type: "emoji", emoji: "👌" }],
+      });
+      return out.react;
+    } catch (e) {
+      if ((e as TelegramError).code !== 400) throw e;
+      // Reactions are unavailable for this message: a plain "✓" says the same.
+    }
+  }
   if (out.edit) {
     const target = { chat_id: owner, message_id: out.edit.id };
     try {

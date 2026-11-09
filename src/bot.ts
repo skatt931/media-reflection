@@ -6,6 +6,7 @@ import { exportVault, type ExportReport } from "./vault.ts";
 import type { Metadata } from "./metadata.ts";
 import type { Transcribe } from "./voice.ts";
 import { findUrl } from "./links.ts";
+import { JournalStore, parseDiaryDate } from "./journal.ts";
 import { breakdown, review, slideText, validPeriod, previousPeriod, type Review } from "./stats.ts";
 
 export type Out = {
@@ -24,6 +25,7 @@ export type Services = {
   metadata?: (url: string) => Promise<Metadata | null>;
   cover?: (id: string, imageUrl: string) => Promise<string | null>;
   transcribe?: Transcribe;
+  journal?: JournalStore;
 };
 
 const TTL = 30 * 60000;
@@ -34,6 +36,10 @@ const dialogMenu = {
   keyboard: [["Скасувати"], ["Бібліотека", "Запитати", "Експорт"]],
   resize_keyboard: true,
 };
+// An unfinished diary entry is saved by itself after this long without a new message.
+const DIARY_SILENCE = 60 * 60000;
+// Reply-keyboard buttons keep working while the diary is being written; anything else is diary text.
+const menuTexts = new Set(["Бібліотека", "Запитати", "Експорт", "Скасувати", "Довідка"]);
 const icons: Record<string, string> = { loved: "❤️", positive: "👍", mixed: "😐", negative: "👎" };
 const button = (text: string, callback_data: string) => ({ text, callback_data });
 const short = (text: string, max = 80) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
@@ -132,9 +138,69 @@ async function sendCard(
   return mid;
 }
 
+// 2026-11-05 → 05.11.26, like the diary note names.
+const diaryDay = (date: string) => {
+  const [year, month, day] = date.split("-");
+  return `${day}.${month}.${year.slice(2)}`;
+};
+const diaryContext = (extra: object = {}) => ({
+  mode: "diary",
+  expires: Date.now() + DIARY_SILENCE + 5 * 60000,
+  ...extra,
+});
+const diaryLine = (draft: Record<string, any>, today: string) =>
+  `Щоденник · ${diaryDay(draft.entry_date)}${draft.entry_date === today ? " (сьогодні)" : ""}\n` +
+  (draft.parts
+    ? `Повідомлень: ${draft.parts}, символів: ${draft.body.length}. Пиши далі або натисни «Готово».`
+    : "Пиши текст або надсилай голосові — усе склеїться в один запис. Закінчиш — «Готово».");
+const diaryButtons = {
+  inline_keyboard: [
+    [button("Готово", "diary:done")],
+    [button("Дата", "diary:date"), button("Скасувати", "diary:cancel")],
+  ],
+};
+const diaryBack = { inline_keyboard: [[button("← Назад", "diary:back")]] };
+const diaryDates = {
+  inline_keyboard: [
+    [button("Сьогодні", "diary:setdate:today"), button("Вчора", "diary:setdate:yesterday")],
+    [button("Інша дата", "diary:customdate")],
+    [button("← Назад", "diary:back")],
+  ],
+};
+const diarySaved = (entry: { date: string; length: number }) =>
+  `Збережено запис за ${diaryDay(entry.date)} (символів: ${entry.length}).`;
+const diaryUndo = (id: number) => ({ inline_keyboard: [[button("Скасувати запис", `diary:undo:${id}`)]] });
+
+// Saves an entry nobody finished once the silence has lasted an hour. Nothing is lost: the text was in the draft.
+export async function diaryAutosave(s: Store, journal: JournalStore, send: Send, now = new Date()) {
+  const draft = journal.draft();
+  if (!draft || now.getTime() - Date.parse(draft.updated_at) < DIARY_SILENCE) return;
+  if (s.context()?.mode === "diary") s.setContext(null);
+  const entry = journal.finishDraft();
+  if (!entry) return;
+  if (draft.status_message)
+    await send("", undefined, { edit: { id: draft.status_message, caption: false }, markupOnly: true }).catch(
+      () => {},
+    );
+  await send(`Година без нових повідомлень. ${diarySaved(entry)}`, diaryUndo(entry.id), { silent: true });
+}
+
+const ago = (days: number) => {
+  if (days <= 0) return "сьогодні";
+  if (days === 1) return "вчора";
+  const word =
+    days % 10 === 1 && days % 100 !== 11
+      ? "день"
+      : days % 10 >= 2 && days % 10 <= 4 && (days % 100 < 12 || days % 100 > 14)
+        ? "дні"
+        : "днів";
+  return `${days} ${word} тому`;
+};
+
 export const commands = [
   { command: "help", description: "Як користуватися" },
   { command: "list", description: "Останні записи" },
+  { command: "diary", description: "Записати щоденник" },
   { command: "later", description: "На потім" },
   { command: "reflect", description: "Без вражень" },
   { command: "ask", description: "Пошук по збереженому" },
@@ -199,6 +265,16 @@ const help: Record<string, { title: string; text: string }> = {
       "• На будь-якій картці в списку можна реагувати чи відповісти думкою.\n" +
       "• «Без вражень» — переглянуте, де ще немає ні реакції, ні думки.",
   },
+  diary: {
+    title: "Щоденник",
+    text:
+      "/diary — режим запису: кілька повідомлень чи голосових склеюються в один запис. Закінчиш — «Готово».\n\n" +
+      "• Забув натиснути — запис збережеться сам після години тиші.\n" +
+      "• «Дата» — записати за вчора чи будь-який інший день.\n" +
+      "• Голосові: бот питає, чи розпізнавати, бо аудіо піде в Groq (сторонній сервіс).\n" +
+      "• Після збереження «Скасувати запис» видаляє його.\n" +
+      "• Це окремо від медіатеки: не потрапляє в підсумки й пошук.",
+  },
   reviews: {
     title: "Підсумки",
     text:
@@ -231,6 +307,7 @@ export async function weekly(
   send: Send,
   now = new Date(),
   when = process.env.WEEKLY_DIGEST ?? "fri 18:00",
+  journal?: JournalStore,
 ) {
   const match = /^(sun|mon|tue|wed|thu|fri|sat) (\d{2}:\d{2})$/.exec(when.trim().toLowerCase());
   if (!match) return;
@@ -249,8 +326,13 @@ export async function weekly(
     const open = s.unreflected(today).length;
     const head =
       now.getTime() - Date.parse(from) > 8 * 86400000 ? `З ${since} збережено` : "За тиждень збережено";
+    const last = journal?.lastEntryDate();
     const mid = await send(
-      `${head} ${saved.length}: ${mix}.` + (open ? `\nБез вражень: ${open}.` : ""),
+      `${head} ${saved.length}: ${mix}.` +
+        (open ? `\nБез вражень: ${open}.` : "") +
+        (last
+          ? `\nОстанній запис щоденника — ${ago(Math.round((Date.parse(today) - Date.parse(last)) / 86400000))}.`
+          : ""),
       open ? { inline_keyboard: [[button("Переглянути", "weekly:open")]] } : undefined,
       { edit: reuse ? { id: previous, caption: false } : undefined, silent: true },
     );
@@ -557,6 +639,174 @@ export async function handle(
     return item && !s.reflections(item.id).length ? item : null;
   }
 
+  const journal = services.journal;
+  const diaryStrip = (id: unknown) =>
+    id
+      ? send("", undefined, { edit: { id: id as number, caption: false }, markupOnly: true }).catch(() => {})
+      : null;
+  // The status message carries the buttons. A new part gets a fresh one at the bottom of the chat
+  // and the previous one loses its buttons; with `edit` the given message is rewritten in place.
+  async function diaryStatus(edit?: Out["edit"]) {
+    const draft = journal!.draft()!;
+    if (!edit) await diaryStrip(draft.status_message);
+    const mid = await send(diaryLine(draft, localDate(at)), diaryButtons, { edit, silent: true });
+    journal!.setDraftMessage(mid);
+  }
+  async function diaryOpen(rest: string) {
+    if (!journal) {
+      await send("Щоденник не підключено.", menu);
+      return;
+    }
+    journal.startDraft(localDate(at), u.update_id);
+    s.setContext(diaryContext());
+    if (rest) journal.appendDraft(u.update_id, rest);
+    await diaryStatus();
+  }
+  async function diaryText(text: string) {
+    const j = journal!;
+    if (!text) return;
+    if (!j.draft()) j.startDraft(localDate(at), u.update_id);
+    if (active?.awaiting === "date") {
+      const date = parseDiaryDate(text);
+      if (!date) await send("Не схоже на дату. Формат: 05.11.26 або 2026-11-05.");
+      else if (date > localDate(at)) await send("Ця дата ще не настала.");
+      else {
+        j.setDraftDate(date);
+        s.setContext(diaryContext());
+        const old = j.draft()!.status_message;
+        await diaryStatus(old ? { id: old as number, caption: false } : undefined);
+      }
+      return;
+    }
+    if (j.appendDraft(u.update_id, text)) {
+      s.setContext(diaryContext());
+      await diaryStatus();
+    }
+  }
+  // Audio goes to a third party (Groq), so a voice note is transcribed only after the button.
+  async function diaryVoice(voice: any) {
+    if (!services.transcribe) {
+      await send("Для голосових потрібен Groq: npm run setup:groq. Голосове не додано.", menu);
+      return;
+    }
+    if (voice.file_size > 20_000_000) {
+      await send("Запис завеликий, максимум 20 МБ.", menu);
+      return;
+    }
+    const mid = await send("🎤 Розпізнати голосове? Аудіо піде в Groq, сторонній сервіс.", {
+      inline_keyboard: [[button("Розпізнати", "diary:voice:yes"), button("Пропустити", "diary:voice:no")]],
+    });
+    s.setValue(`diaryvoice:${mid}`, voice.file_id);
+  }
+  async function diaryVoiceChoice(accept: boolean) {
+    const key = `diaryvoice:${here!.id}`;
+    const fileId = s.value(key);
+    if (!fileId) {
+      await send("Голосове застаріло, надішли його ще раз.", undefined, { edit: here });
+      return;
+    }
+    if (!accept) {
+      s.run("DELETE FROM context WHERE key=?", key);
+      await send("Голосове пропущено й не збережено.", undefined, { edit: here });
+      return;
+    }
+    const cache = `voice:${u.update_id}`;
+    const text = s.value(cache) ?? (await services.transcribe?.(fileId));
+    if (!text) {
+      notice = "Не вдалося розпізнати, спробуй ще раз";
+      return;
+    }
+    s.setValue(cache, text);
+    if (!journal!.draft()) journal!.startDraft(localDate(at), u.update_id);
+    const added = journal!.appendDraft(u.update_id, text);
+    s.run("DELETE FROM context WHERE key=?", key);
+    s.setContext(diaryContext());
+    await send(`🎤 ${short(text, 1000)}`, undefined, { edit: here });
+    if (added) await diaryStatus();
+  }
+  async function diaryFinish(edit?: Out["edit"]) {
+    const previous = journal!.draft()?.status_message;
+    s.setContext(null);
+    const entry = journal!.finishDraft();
+    if (!edit) await diaryStrip(previous);
+    if (entry) await send(diarySaved(entry), diaryUndo(entry.id), { edit });
+    else await send("Порожньо, зберігати нічого.", edit ? undefined : menu, { edit });
+  }
+  async function diaryCallback(parts: string[]) {
+    const j = journal;
+    if (!j || !here) return;
+    const step = parts[1];
+    if (step === "voice") return diaryVoiceChoice(parts[2] === "yes");
+    if (["undo", "keep", "remove"].includes(step)) {
+      const entry = j.entry(Number(parts[2]));
+      if (!entry || entry.source !== "bot") {
+        await send("Цього запису вже немає.", undefined, { edit: here });
+        return;
+      }
+      const info = { date: entry.entry_date as string, length: (entry.body as string).length };
+      if (step === "undo")
+        await send(
+          `Видалити запис за ${diaryDay(info.date)} (символів: ${info.length})? Повернути його не вийде.`,
+          {
+            inline_keyboard: [
+              [button("Так, видалити", `diary:remove:${entry.id}`)],
+              [button("Залишити", `diary:keep:${entry.id}`)],
+            ],
+          },
+          { edit: here },
+        );
+      else if (step === "keep") await send(diarySaved(info), diaryUndo(entry.id), { edit: here });
+      else {
+        j.removeBotEntry(entry.id);
+        await send(`Запис за ${diaryDay(info.date)} видалено.`, undefined, { edit: here });
+        notice = "Видалено";
+      }
+      return;
+    }
+    const draft = j.draft();
+    if (!draft) {
+      await send("Цей запис уже закрито.", undefined, { edit: here });
+      return;
+    }
+    switch (step) {
+      case "done":
+        await diaryFinish(here);
+        return;
+      case "date":
+        await send(diaryLine(draft, localDate(at)), diaryDates, { edit: here, markupOnly: true });
+        return;
+      case "back":
+        s.setContext(diaryContext());
+        await diaryStatus(here);
+        return;
+      case "setdate": {
+        if (!["today", "yesterday"].includes(parts[2])) return;
+        j.setDraftDate(parts[2] === "today" ? localDate(at) : addDays(localDate(at), -1));
+        s.setContext(diaryContext());
+        await diaryStatus(here);
+        return;
+      }
+      case "customdate":
+        s.setContext(diaryContext({ awaiting: "date" }));
+        await send("Введи дату: 05.11.26 або 2026-11-05.", diaryBack, { edit: here });
+        return;
+      case "cancel":
+        await send(
+          `Видалити текст, що зібрався (символів: ${draft.body.length})? Повернути його не вийде.`,
+          {
+            inline_keyboard: [[button("Так, видалити", "diary:discard")], [button("← Назад", "diary:back")]],
+          },
+          { edit: here },
+        );
+        return;
+      case "discard":
+        j.discardDraft();
+        s.setContext(null);
+        await send("Чернетку видалено.", undefined, { edit: here });
+        return;
+    }
+  }
+
   async function onText(text: string) {
     const replyTo = m.reply_to_message?.message_id;
     const paged = pagerOf(replyTo);
@@ -591,6 +841,17 @@ export async function handle(
     let text: string | null =
       typeof m.text === "string" ? m.text : typeof m.caption === "string" ? m.caption : null;
     const voice = m.voice ?? m.audio;
+    // While the diary is open, texts and voice notes belong to the entry, not to the library.
+    if (active?.mode === "diary" && journal) {
+      if (text === null && voice) {
+        await diaryVoice(voice);
+        return;
+      }
+      if (text !== null && !text.startsWith("/") && !menuTexts.has(text.trim())) {
+        await diaryText(text.trim());
+        return;
+      }
+    }
     if (text === null && voice) {
       if (!services.transcribe) {
         await send("Для голосових потрібен Groq: npm run setup:groq.", menu);
@@ -626,8 +887,16 @@ export async function handle(
     }
     const cmd = text.split(/\s/)[0].split("@")[0];
     if (["/cancel", "/done"].includes(cmd) || text === "Скасувати") {
-      s.setContext(null);
-      await send("Скасовано.", menu);
+      if (active?.mode === "diary" && journal && cmd === "/done") await diaryFinish();
+      else {
+        s.setContext(null);
+        await send(
+          active?.mode === "diary" && journal?.draft()
+            ? "Вийшов зі щоденника. Текст не загублено: він збережеться сам після години тиші, /diary — продовжити."
+            : "Скасовано.",
+          menu,
+        );
+      }
     } else if (["/start", "/help", "/довідка"].includes(cmd) || text === "Довідка") {
       s.setContext(null);
       // The reply keyboard is set by a plain message; inline buttons need their own.
@@ -644,7 +913,8 @@ export async function handle(
       const period = text.split(/\s+/)[1] ?? localDate().slice(0, 7);
       if (!validPeriod(period)) await send("Формат: /review, /review 2026-10 або /review 2026.", menu);
       else await showReview(period);
-    } else if (cmd === "/enrich") await enrich();
+    } else if (cmd === "/diary") await diaryOpen(text.replace(/^\S+/, "").trim());
+    else if (cmd === "/enrich") await enrich();
     else if (text === "Експорт" || cmd === "/export") {
       s.setContext(null);
       try {
@@ -686,6 +956,10 @@ export async function handle(
     if (action === "help") {
       const topic = parts[1] === "index" ? undefined : parts[1];
       await send(helpText(topic), helpButtons(topic), { edit: here });
+      return;
+    }
+    if (action === "diary") {
+      await diaryCallback(parts);
       return;
     }
     if (action === "bytype") {

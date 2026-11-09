@@ -1,12 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   JournalStore,
+  exportJournal,
   importJournal,
+  journalExportName,
   journalFileDate,
   journalSchemaVersion,
   verifyJournal,
@@ -149,6 +159,77 @@ test("bot entries never collide with imports and may share a date", () => {
     store.add({ date: "2026-11-05", body: "Вечір", source: "bot" });
     assert.equal(store.all("SELECT count(*) AS n FROM journal_entries")[0].n, 3);
     assert.equal(verifyJournal(store, dir).problems.length, 0);
+    store.close();
+  });
+});
+
+test("export writes bot entries as notes named like the imported ones, text as is", () => {
+  withFolder({ "8.07.26.md": "Імпорт" }, (dir, db) => {
+    const store = new JournalStore(db);
+    importJournal(store, dir);
+    const out = join(dir, "..", "export");
+    store.add({ date: "2026-11-05", body: "Ранок\n\nДругий абзац", source: "bot" });
+    store.add({ date: "2026-11-05", body: "Вечір", source: "bot" });
+    store.add({ date: "2026-07-08", body: "Того ж дня, що й імпорт", source: "bot" });
+
+    const report = exportJournal(store, out);
+    assert.deepEqual(report.written, ["08.07.26 (2).md", "05.11.26.md", "05.11.26 (2).md"]);
+    assert.deepEqual(
+      readdirSync(out)
+        .filter((n) => n.endsWith(".md"))
+        .sort(),
+      ["05.11.26 (2).md", "05.11.26.md", "08.07.26 (2).md"],
+    );
+    assert.equal(readFileSync(join(out, "05.11.26.md"), "utf8"), "Ранок\n\nДругий абзац");
+    assert.equal(journalExportName("2026-01-09", 3), "09.01.26 (3).md");
+    store.close();
+  });
+});
+
+test("export run twice writes nothing new and never rewrites a file", () => {
+  withFolder({}, (dir, db) => {
+    const store = new JournalStore(db);
+    store.add({ date: "2026-11-05", body: "Текст", source: "bot" });
+    exportJournal(store, dir);
+    writeFileSync(join(dir, "05.11.26.md"), "Змінено руками");
+    const again = exportJournal(store, dir);
+    assert.deepEqual(again.named, []);
+    assert.deepEqual(again.written, []);
+    assert.equal(readFileSync(join(dir, "05.11.26.md"), "utf8"), "Змінено руками");
+
+    rmSync(join(dir, "05.11.26.md"));
+    assert.deepEqual(exportJournal(store, dir).written, ["05.11.26.md"]);
+    store.close();
+  });
+});
+
+test("dry run of export names and writes nothing", () => {
+  withFolder({}, (dir, db) => {
+    const store = new JournalStore(db);
+    store.add({ date: "2026-11-05", body: "Текст", source: "bot" });
+    const out = join(dir, "export");
+    assert.deepEqual(exportJournal(store, out, true).written, ["05.11.26.md"]);
+    assert.equal(existsSync(out), false);
+    assert.equal(store.all("SELECT export_name FROM journal_entries")[0].export_name, null);
+    store.close();
+  });
+});
+
+test("a deleted entry's file is retired and its name is never given to a new entry", () => {
+  withFolder({}, (dir, db) => {
+    const store = new JournalStore(db);
+    const id = Number(store.add({ date: "2026-11-05", body: "Перший", source: "bot" }).lastInsertRowid);
+    exportJournal(store, dir);
+    assert.ok(store.removeBotEntry(id));
+    store.add({ date: "2026-11-05", body: "Новий", source: "bot" });
+    const report = exportJournal(store, dir);
+    assert.deepEqual(report.retired, ["05.11.26.md"]);
+    assert.deepEqual(report.written, ["05.11.26 (2).md"]);
+    assert.equal(readFileSync(join(dir, ".deleted", "05.11.26.md"), "utf8"), "Перший");
+    assert.deepEqual(
+      report.files.map((f) => f.name),
+      ["05.11.26 (2).md"],
+    );
     store.close();
   });
 });

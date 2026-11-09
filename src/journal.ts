@@ -1,5 +1,14 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, chmodSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  mkdirSync,
+  chmodSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 
@@ -30,6 +39,9 @@ const migrations = [
      status_message INTEGER,
      updated_at TEXT NOT NULL
    );`,
+  // The file name a bot entry got in the Obsidian export; set once and never reused.
+  `ALTER TABLE journal_entries ADD COLUMN export_name TEXT;
+   CREATE UNIQUE INDEX journal_export_name ON journal_entries(export_name) WHERE export_name IS NOT NULL;`,
 ];
 export const journalSchemaVersion = migrations.length;
 
@@ -65,7 +77,8 @@ export class JournalStore {
   db: DatabaseSync;
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.db = new DatabaseSync(path);
+    // The bot and the export script open the same file; wait for a short write instead of failing.
+    this.db = new DatabaseSync(path, { timeout: 5000 });
     if (path !== ":memory:") chmodSync(path, 0o600);
     const version = Number(this.all("PRAGMA user_version")[0].user_version);
     if (version > journalSchemaVersion)
@@ -254,4 +267,71 @@ export function verifyJournal(store: JournalStore, dir: string): VerifyReport {
   }
   for (const name of rows.keys()) problems.push(`${name}: є в БД, але немає у вказаній папці`);
   return { files: files.length, entries: store.imported().length, problems };
+}
+
+export type ExportReport = {
+  named: string[];
+  written: string[];
+  retired: string[];
+  files: { name: string; sha256: string }[];
+};
+
+// "2026-11-05", 1 → "05.11.26.md"; 2 → "05.11.26 (2).md".
+export function journalExportName(date: string, n = 1) {
+  const [year, month, day] = date.split("-");
+  return `${day}.${month}.${year.slice(2)}${n > 1 ? ` (${n})` : ""}.md`;
+}
+
+const retiredDir = ".deleted";
+const markdownFiles = (dir: string) =>
+  existsSync(dir)
+    ? readdirSync(dir).filter((name) => name.endsWith(".md") && statSync(join(dir, name)).isFile())
+    : [];
+
+// Writes bot entries as Obsidian notes (text as is, like the imported ones) into `dir`, which the Mac copies
+// with `rsync --ignore-existing`. A name is given once and never reused, an existing file is never rewritten;
+// the file of an entry deleted in the bot moves to `.deleted/`, so it is no longer copied but keeps its name.
+export function exportJournal(store: JournalStore, dir: string, dryRun = false): ExportReport {
+  const report: ExportReport = { named: [], written: [], retired: [], files: [] };
+  const present = markdownFiles(dir);
+  const used = new Set([...present, ...markdownFiles(join(dir, retiredDir))]);
+  const importDates = new Set<string>();
+  for (const row of store.all("SELECT entry_date, source_name, export_name FROM journal_entries")) {
+    if (row.source_name) used.add(row.source_name);
+    if (row.export_name) used.add(row.export_name);
+    if (row.source_name) importDates.add(row.entry_date);
+  }
+  const entries = store.all("SELECT * FROM journal_entries WHERE source='bot' ORDER BY entry_date, id");
+  const assign = () => {
+    for (const entry of entries) {
+      if (entry.export_name) continue;
+      // A day that already has an imported note starts at "(2)", even when its name has no leading zero.
+      let n = importDates.has(entry.entry_date) ? 2 : 1;
+      while (used.has(journalExportName(entry.entry_date, n))) n++;
+      entry.export_name = journalExportName(entry.entry_date, n);
+      used.add(entry.export_name);
+      report.named.push(entry.export_name);
+      if (!dryRun)
+        store.run("UPDATE journal_entries SET export_name=? WHERE id=?", entry.export_name, entry.id);
+    }
+  };
+  // Names are recorded before any file is written: a crash in between only leaves a file to write next time.
+  if (dryRun) assign();
+  else store.transaction(assign);
+
+  const current = new Set(entries.map((entry) => entry.export_name as string));
+  if (!dryRun) mkdirSync(join(dir, retiredDir), { recursive: true, mode: 0o700 });
+  for (const name of present.filter((name) => !current.has(name))) {
+    if (!dryRun) renameSync(join(dir, name), join(dir, retiredDir, name));
+    report.retired.push(name);
+  }
+  for (const entry of entries) {
+    const name = entry.export_name as string;
+    if (!present.includes(name)) {
+      if (!dryRun) writeFileSync(join(dir, name), entry.body, { flag: "wx" });
+      report.written.push(name);
+    }
+    report.files.push({ name, sha256: sha256(Buffer.from(entry.body, "utf8")) });
+  }
+  return report;
 }

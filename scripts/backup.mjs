@@ -76,26 +76,31 @@ function pull() {
     const data = `~/${remoteDir}/data`;
     const scratch = "~/.media-reflection-backup";
 
-    // 1. Consistent database copy on the server (the bot keeps running).
-    const snapshot = spawnSync(
-      "ssh",
-      [
-        ...ssh,
-        `mkdir -p -m 700 ${scratch} && node --input-type=module - ${data}/media.sqlite ${scratch}/media.sqlite`,
-      ],
-      {
-        input: readFileSync(join(root, "scripts", "db-snapshot.mjs")),
-        stdio: ["pipe", "inherit", "inherit"],
-      },
-    );
-    if (snapshot.status !== 0) throw new Error("Не вдалося зробити знімок бази на сервері.");
+    // 1. Consistent copies of the databases on the server (the bot keeps running).
+    // The journal database exists only after the first import, so a missing one is not an error.
+    const snapshot = (file, flags = "") => {
+      const result = spawnSync(
+        "ssh",
+        [
+          ...ssh,
+          `mkdir -p -m 700 ${scratch} && node --input-type=module - ${flags}${data}/${file} ${scratch}/${file}`,
+        ],
+        {
+          input: readFileSync(join(root, "scripts", "db-snapshot.mjs")),
+          stdio: ["pipe", "inherit", "inherit"],
+        },
+      );
+      if (result.status !== 0) throw new Error(`Не вдалося зробити знімок ${file} на сервері.`);
+    };
+    snapshot("media.sqlite");
+    snapshot("journal.sqlite", "--skip-missing ");
 
     // 2. Stream the snapshot and covers, then remove the server-side copy.
     execFileSync(
       "/bin/bash",
       [
         "-c",
-        `set -o pipefail; ssh "\${@:2}" "tar -cf - -C ${scratch} media.sqlite -C ${data} covers; rc=\\$?; rm -rf ${scratch}; exit \\$rc" | tar -xf - -C "$1"`,
+        `set -o pipefail; ssh "\${@:2}" "j=; test -f ${scratch}/journal.sqlite && j=journal.sqlite; tar -cf - -C ${scratch} media.sqlite \\$j -C ${data} covers; rc=\\$?; rm -rf ${scratch}; exit \\$rc" | tar -xf - -C "$1"`,
         "_",
         staging,
         ...ssh,
@@ -112,8 +117,20 @@ function pull() {
     if (integrity !== "ok") throw new Error(`Перевірка цілісності не пройдена: ${integrity}`);
     const covers = readdirSync(join(staging, "covers")).length;
 
+    let journal = "щоденника немає";
+    if (existsSync(join(staging, "journal.sqlite"))) {
+      const jdb = new DatabaseSync(join(staging, "journal.sqlite"), { readOnly: true });
+      const jIntegrity = jdb.prepare("PRAGMA integrity_check").get().integrity_check;
+      const entries = jdb.prepare("SELECT count(*) AS n FROM journal_entries").get().n;
+      jdb.close();
+      if (jIntegrity !== "ok") throw new Error(`Перевірка цілісності щоденника не пройдена: ${jIntegrity}`);
+      journal = `записів щоденника ${entries}, integrity ok`;
+    }
+
     renameSync(staging, join(backupDir, name));
-    log(`Backup ${name}: записів ${items}, обкладинок ${covers}, user_version ${version}, integrity ok.`);
+    log(
+      `Backup ${name}: записів ${items}, обкладинок ${covers}, user_version ${version}, integrity ok; ${journal}.`,
+    );
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
     throw error;

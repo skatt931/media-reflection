@@ -32,6 +32,7 @@ install_deps() {
 if [ -f data/media.sqlite ]; then
   node scripts/db-snapshot.mjs data/media.sqlite data/media.sqlite.pre-deploy
 fi
+node scripts/db-snapshot.mjs --skip-missing data/journal.sqlite data/journal.sqlite.pre-deploy
 
 echo "Оновлюю ${previous:0:7} -> ${target:0:7}"
 git merge --ff-only "$target"

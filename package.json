@@ -21,6 +21,9 @@
     "backup:install": "node --env-file-if-exists=.env scripts/backup.mjs install",
     "backup:uninstall": "node scripts/backup.mjs uninstall",
     "backup:status": "node --env-file-if-exists=.env scripts/backup.mjs status",
+    "journal:import": "node --env-file-if-exists=.env scripts/import-journal.ts import",
+    "journal:verify": "node --env-file-if-exists=.env scripts/import-journal.ts verify",
+    "journal:manifest": "node --env-file-if-exists=.env scripts/import-journal.ts manifest",
     "format": "prettier --write src scripts tests"
   },
   "devDependencies": {

@@ -37,6 +37,31 @@ export const entryHash = (id: number) => `#/diary/${id}`;
 export const materialHash = (id: string) => `#/media/${encodeURIComponent(id)}`;
 export const sectionHash = (section: Section) => `#/${section}`;
 
+// The order of the tabs: swiping goes along it.
+export const ORDER: Section[] = ["diary", "media", "ideas"];
+
+export function hashOf(route: Route): string {
+  switch (route.screen) {
+    case "list":
+      return sectionHash(route.section);
+    case "entry":
+      return entryHash(route.id);
+    case "compose":
+      return composeHash;
+    case "material":
+      return materialHash(route.id);
+    case "search":
+      return searchHash(route.section, route.q);
+  }
+}
+
+// Where a screen keeps its scroll position. The search address changes with every query, the screen does not.
+export const scrollKey = (route: Route) =>
+  route.screen === "search" ? `#/${route.section}/search` : hashOf(route);
+
+// How deep a screen lies: moving to a deeper one slides in, to a shallower one slides out.
+export const depth = (route: Route) => (route.screen === "list" ? 0 : route.screen === "entry" ? 2 : 1);
+
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parse(location.hash));
   useEffect(() => {

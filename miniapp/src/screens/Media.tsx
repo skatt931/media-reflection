@@ -41,7 +41,7 @@ function Item({ card, data }: { card: LibraryCard; data: LibraryList }) {
       ? card.tags.join(" · ")
       : shortDate(card.date);
   return (
-    <a className="item" href={materialHash(card.id)}>
+    <a className="item" href={materialHash(card.id)} data-card={card.id}>
       <Cover id={card.id} title={card.title} has={card.cover} />
       <div className="body">
         <h3>{card.title}</h3>

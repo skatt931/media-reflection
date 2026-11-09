@@ -106,8 +106,48 @@ mark {
 }
 
 /* shell */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 .app {
-  min-height: 100vh;
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+/* Every screen scrolls in its own pane, so two can be on show while one slides over the other. A pane that is
+   absolute and has no z-index makes no stacking context of its own: sheets and the tab bar keep their order. */
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.pane {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  background: var(--ground);
+}
+.stage.moving .pane {
+  pointer-events: none;
+  will-change: transform;
+}
+.pane.lifted {
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16);
+}
+.veil {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
 }
 .screen,
 .notice {
@@ -116,7 +156,7 @@ mark {
   min-height: 100vh;
   padding: calc(var(--inset-top) + 8px) calc(var(--inset-right) + 20px) 24px calc(var(--inset-left) + 20px);
 }
-.app:has(.tabs) .screen {
+.pane.is-list .screen {
   padding-bottom: calc(var(--tabs-height) + var(--inset-bottom) + 16px);
 }
 .notice {
@@ -145,6 +185,7 @@ mark {
 .tabs {
   position: fixed;
   inset: auto 0 0;
+  transition: transform 360ms cubic-bezier(0.32, 0.72, 0, 1);
   display: flex;
   justify-content: center;
   padding: 0 var(--inset-right) var(--inset-bottom) var(--inset-left);
@@ -163,8 +204,15 @@ mark {
   font-weight: 500;
   color: var(--faint);
 }
+.tabs a {
+  transition: color 200ms ease-out;
+}
 .tabs a[aria-current="page"] {
   color: var(--accent);
+}
+.tabs.away {
+  transform: translateY(100%);
+  pointer-events: none;
 }
 
 /* title row */
@@ -589,6 +637,7 @@ mark {
 
 /* media library */
 .views {
+  touch-action: pan-x pan-y;
   display: flex;
   gap: 8px;
   margin: 0 -20px 4px;
@@ -1094,6 +1143,12 @@ mark {
 }
 @media (prefers-reduced-motion: reduce) {
   .resolved summary svg {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs {
     transition: none;
   }
 }

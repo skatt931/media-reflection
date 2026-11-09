@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import type { DiaryEntry } from "../../../src/miniapp/data.ts";
 import { ApiError } from "../api.ts";
 import { dayMonth, dayMonthPlain, parts, weekdayFull, wordsLabel } from "../format.ts";
@@ -11,9 +10,6 @@ export function Entry({ id }: { id: number }) {
   const entry = useResource<DiaryEntry>(`/api/diary/${id}`);
   const back = () => goBack(sectionHash("diary"));
   useBack(true, back);
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [id]);
   const data = entry.data;
 
   return (

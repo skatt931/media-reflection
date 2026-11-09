@@ -20,20 +20,45 @@ const migrations = [
    );
    CREATE UNIQUE INDEX journal_import_name ON journal_entries(source_name) WHERE source='import';
    CREATE INDEX journal_entry_date ON journal_entries(entry_date);`,
+  // The entry being collected in the bot: one row, so a restart or a long pause never loses the text.
+  `CREATE TABLE journal_draft(
+     id INTEGER PRIMARY KEY CHECK(id=1),
+     entry_date TEXT NOT NULL,
+     body TEXT NOT NULL,
+     parts INTEGER NOT NULL,
+     last_update INTEGER NOT NULL,
+     status_message INTEGER,
+     updated_at TEXT NOT NULL
+   );`,
 ];
 export const journalSchemaVersion = migrations.length;
 
 export const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
+
+function calendarDate(year: number, month: number, day: number) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day)
+    return null;
+  return date.toISOString().slice(0, 10);
+}
 
 // "ДД.ММ.РР.md" (leading zeros optional, "8.07.26.md") → "2026-07-08"; null for any other name or an impossible date.
 export function journalFileDate(name: string) {
   const match = /^(\d{1,2})\.(\d{1,2})\.(\d{2})\.md$/.exec(name);
   if (!match) return null;
   const [day, month, year] = match.slice(1).map(Number);
-  const date = new Date(Date.UTC(2000 + year, month - 1, day));
-  if (date.getUTCFullYear() !== 2000 + year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day)
-    return null;
-  return date.toISOString().slice(0, 10);
+  return calendarDate(2000 + year, month, day);
+}
+
+// What a person types as a date: "5.11.26", "05.11.2026" or "2026-11-05" → "2026-11-05"; null otherwise.
+export function parseDiaryDate(text: string) {
+  const value = text.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (iso) return calendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const dotted = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(value);
+  if (!dotted) return null;
+  const year = Number(dotted[3]);
+  return calendarDate(dotted[3].length === 2 ? 2000 + year : year, Number(dotted[2]), Number(dotted[1]));
 }
 
 export class JournalStore {
@@ -81,6 +106,63 @@ export class JournalStore {
       now,
       now,
     );
+  }
+  entry(id: number) {
+    return this.all("SELECT * FROM journal_entries WHERE id=?", id)[0];
+  }
+  lastEntryDate() {
+    return this.all("SELECT MAX(entry_date) AS date FROM journal_entries")[0].date as string | null;
+  }
+  // Only what the bot wrote can be undone there; imported notes are never touched.
+  removeBotEntry(id: number) {
+    return Number(this.run("DELETE FROM journal_entries WHERE id=? AND source='bot'", id).changes) > 0;
+  }
+  draft() {
+    return this.all("SELECT * FROM journal_draft WHERE id=1")[0];
+  }
+  // Updates up to `update - 1` never append (a replay after a crash); the opening update itself may.
+  startDraft(date: string, update: number) {
+    this.run(
+      "INSERT OR IGNORE INTO journal_draft(id,entry_date,body,parts,last_update,updated_at) VALUES(1,?,'',0,?,?)",
+      date,
+      update - 1,
+      new Date().toISOString(),
+    );
+    return this.draft()!;
+  }
+  // False when this update was already added.
+  appendDraft(update: number, text: string) {
+    const draft = this.draft();
+    if (!draft || update <= draft.last_update) return false;
+    this.run(
+      "UPDATE journal_draft SET body=?,parts=parts+1,last_update=?,updated_at=? WHERE id=1",
+      draft.body ? `${draft.body}\n\n${text}` : text,
+      update,
+      new Date().toISOString(),
+    );
+    return true;
+  }
+  setDraftDate(date: string) {
+    this.run("UPDATE journal_draft SET entry_date=?,updated_at=? WHERE id=1", date, new Date().toISOString());
+  }
+  setDraftMessage(id: number) {
+    this.run("UPDATE journal_draft SET status_message=? WHERE id=1", id);
+  }
+  // Turns the draft into an entry. An empty draft is just dropped (null).
+  finishDraft() {
+    return this.transaction(() => {
+      const draft = this.draft();
+      if (!draft) return null;
+      this.run("DELETE FROM journal_draft WHERE id=1");
+      if (!draft.body.trim()) return null;
+      const id = Number(
+        this.add({ date: draft.entry_date, body: draft.body, source: "bot" }).lastInsertRowid,
+      );
+      return { id, date: draft.entry_date as string, length: (draft.body as string).length };
+    });
+  }
+  discardDraft() {
+    this.run("DELETE FROM journal_draft WHERE id=1");
   }
   imported() {
     return this.all("SELECT * FROM journal_entries WHERE source='import' ORDER BY entry_date,source_name");

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Store } from "./store.ts";
-import { handle, weekly, reviews, commands, type Send } from "./bot.ts";
+import { handle, weekly, reviews, diaryAutosave, commands, type Send } from "./bot.ts";
+import { JournalStore } from "./journal.ts";
 import { createRuntime } from "./runtime.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -112,6 +113,7 @@ const send: Send = async (text, keyboard, out = {}) => {
 };
 
 let store: Store | undefined;
+let journal: JournalStore | undefined;
 try {
   const me = await api("getMe");
   const hook = await api("getWebhookInfo");
@@ -120,12 +122,15 @@ try {
   store = new Store(process.env.DB_PATH ?? "./data/media.sqlite");
   store.prune();
   await api("setMyCommands", { commands }).catch(() => console.error("Не вдалося оновити меню команд."));
+  journal = new JournalStore(process.env.JOURNAL_DB_PATH ?? "./data/journal.sqlite");
   const runtime = createRuntime(store);
+  const services = { ...runtime.services, journal };
   console.log(`Бот @${me.username} запущено. Ctrl+C — зупинити.`);
   let failures = 0;
   while (running) {
     try {
-      await weekly(store, send);
+      await weekly(store, send, new Date(), undefined, journal);
+      await diaryAutosave(store, journal, send);
       await reviews(store, send);
       const updates = await api("getUpdates", {
         offset: store.offset(),
@@ -134,7 +139,7 @@ try {
       });
       for (const u of updates) {
         if (!running) break;
-        const notice = await handle(store, u, owner, send, runtime.ai, runtime.services);
+        const notice = await handle(store, u, owner, send, runtime.ai, services);
         if (u.callback_query)
           await api("answerCallbackQuery", {
             callback_query_id: u.callback_query.id,
@@ -172,4 +177,5 @@ try {
   }
 } finally {
   store?.close();
+  journal?.close();
 }

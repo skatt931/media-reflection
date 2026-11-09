@@ -3,6 +3,7 @@ import { ApiError, get, mock } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { sectionHash, useRoute, type Section } from "./router.ts";
 import { initData } from "./telegram.ts";
+import { Compose } from "./screens/Compose.tsx";
 import { Diary } from "./screens/Diary.tsx";
 import { Entry } from "./screens/Entry.tsx";
 import { Ideas } from "./screens/Ideas.tsx";
@@ -63,7 +64,9 @@ export function App() {
   const tabs = route.screen === "list";
   return (
     <div className="app">
-      {route.screen === "entry" ? (
+      {route.screen === "compose" ? (
+        <Compose />
+      ) : route.screen === "entry" ? (
         <Entry key={route.id} id={route.id} />
       ) : route.screen === "material" ? (
         <Material key={route.id} id={route.id} />

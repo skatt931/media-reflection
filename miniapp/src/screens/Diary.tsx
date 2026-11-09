@@ -4,7 +4,7 @@ import { capital, monthAbbr, monthKey, monthName, parts, records, weekdayShort }
 import { useResource, useScrollMemory } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { Bars, Empty, Failed, Marked } from "../parts.tsx";
-import { entryHash, searchHash } from "../router.ts";
+import { composeHash, entryHash, searchHash } from "../router.ts";
 import { Calendar } from "./Calendar.tsx";
 
 // In a month's list the line under the day is its weekday; in search results, which cross months, its month.
@@ -86,22 +86,27 @@ export function Diary() {
     <main className="screen">
       <header className="top">
         <h1>Щоденник</h1>
-        {!!entries?.length && (
-          <div className="acts">
-            <a href={searchHash("diary")} aria-label="Пошук">
-              <Icon name="search" />
-            </a>
-            <button aria-label="Календар" aria-pressed={calendar} onClick={() => setCalendar(true)}>
-              <Icon name="calendar" />
-            </button>
-          </div>
-        )}
+        <div className="acts">
+          {!!entries?.length && (
+            <>
+              <a href={searchHash("diary")} aria-label="Пошук">
+                <Icon name="search" />
+              </a>
+              <button aria-label="Календар" aria-pressed={calendar} onClick={() => setCalendar(true)}>
+                <Icon name="calendar" />
+              </button>
+            </>
+          )}
+          <a href={composeHash} aria-label="Новий запис">
+            <Icon name="plus" />
+          </a>
+        </div>
       </header>
       {entries ? (
         entries.length ? (
           <Months entries={entries} />
         ) : (
-          <Empty>Записів поки немає. Почни командою /diary у боті.</Empty>
+          <Empty>Записів поки немає. Натисни + угорі або почни командою /diary у боті.</Empty>
         )
       ) : list.status === "error" ? (
         <Failed what="щоденник" retry={list.reload} />

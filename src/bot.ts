@@ -190,17 +190,27 @@ export async function diaryAutosave(s: Store, journal: JournalStore, send: Send,
 
 const ideaContext = () => ({ mode: "idea", expires: Date.now() + TTL });
 function ideaCard(journal: JournalStore, idea: Record<string, any>) {
-  const count = journal.ideaCount();
+  const resolved = Boolean(idea.resolved_at);
+  const ids = journal.ideaIds(resolved);
+  const at = ids.indexOf(idea.id);
   const keyboard: any[][] = [];
-  if (count > 1) {
-    const newer = journal.ideaStep(idea.id, "newer").id;
-    const older = journal.ideaStep(idea.id, "older").id;
-    keyboard.push([button("←", `idea:open:${newer}`), button("→", `idea:open:${older}`)]);
-  }
-  keyboard.push([button("Видалити", `idea:del:${idea.id}`)]);
+  if (ids.length > 1)
+    keyboard.push([
+      button("←", `idea:open:${ids[(at - 1 + ids.length) % ids.length]}`),
+      button("→", `idea:open:${ids[(at + 1) % ids.length]}`),
+    ]);
+  // Nothing is deleted: an idea is resolved and can be brought back, as in the Mini App.
+  keyboard.push([
+    resolved
+      ? button("Повернути до ідей", `idea:undo:${idea.id}`)
+      : button("Вирішено", `idea:done:${idea.id}`),
+  ]);
+  if (resolved) keyboard.push([button("← До ідей", "idea:list:open")]);
+  else if (journal.ideaIds(true).length)
+    keyboard.push([button(`Вирішені (${journal.ideaIds(true).length})`, "idea:list:resolved")]);
   return {
     text:
-      `Ідеї · ${journal.ideaPosition(idea.id)}/${count}\n` +
+      `${resolved ? "Вирішені" : "Ідеї"} · ${at + 1}/${ids.length}\n` +
       `${diaryDay(idea.idea_date)} ${idea.idea_time}${idea.source === "voice" ? " 🎤" : ""}\n\n` +
       short(idea.body, 3800),
     keyboard: { inline_keyboard: keyboard },
@@ -305,7 +315,7 @@ const help: Record<string, { title: string; text: string }> = {
       "/idea текст — записати ідею одним рядком, бот відповість реакцією 👌. Без діалогу й підтверджень.\n\n" +
       "• /idea без тексту — наступне повідомлення (текст або голосове) стане ідеєю.\n" +
       "• Голосове розпізнається Groq (аудіо йде в сторонній сервіс).\n" +
-      "• /ideas — список від нових до старих, гортай ← →, «Видалити» — з підтвердженням.\n" +
+      "• /ideas — список від нових до старих, гортай ← →. «Вирішено» прибирає ідею зі списку (не видаляє): внизу «Вирішені», звідти її можна повернути. Так само в Mini App.\n" +
       "• Раз на тиждень npm run journal:pull на Mac кладе кожну ідею окремим файлом у Journal/Ideas/Inbox в Obsidian.\n" +
       "• Це окремо від медіатеки й щоденника: не потрапляє в підсумки, «Без вражень» і пошук.",
   },
@@ -884,40 +894,51 @@ export async function handle(
   }
   async function ideaShow(idea: Record<string, any> | undefined, edit?: Out["edit"]) {
     if (!idea) {
-      await send("Ідей поки немає. /idea текст — записати.", edit ? undefined : menu, { edit });
+      const resolved = journal!.ideaIds(true).length;
+      await send(
+        resolved ? "Усі ідеї вирішені." : "Ідей поки немає. /idea текст — записати.",
+        resolved
+          ? { inline_keyboard: [[button(`Вирішені (${resolved})`, "idea:list:resolved")]] }
+          : edit
+            ? undefined
+            : menu,
+        { edit },
+      );
       return;
     }
     const card = ideaCard(journal!, idea);
     await send(card.text, card.keyboard, { edit });
   }
+  const newestIdea = (resolved = false) => {
+    const id = journal!.ideaIds(resolved)[0];
+    return id === undefined ? undefined : journal!.idea(id);
+  };
   async function ideaCallback(parts: string[]) {
     const j = journal;
     if (!j || !here) return;
+    if (parts[1] === "list") {
+      await ideaShow(newestIdea(parts[2] === "resolved"), here);
+      return;
+    }
     const idea = j.idea(Number(parts[2]));
     if (parts[1] === "open") {
-      await ideaShow(idea ?? j.newestIdea(), here);
+      await ideaShow(idea ?? newestIdea(), here);
       return;
     }
     if (!idea) {
       await send("Цієї ідеї вже немає.", undefined, { edit: here });
       return;
     }
-    if (parts[1] === "del")
-      await send(
-        `Видалити ідею? Повернути її не вийде.\n\n${short(idea.body, 300)}`,
-        {
-          inline_keyboard: [
-            [button("Так, видалити", `idea:rm:${idea.id}`)],
-            [button("Залишити", `idea:open:${idea.id}`)],
-          ],
-        },
-        { edit: here },
-      );
-    else if (parts[1] === "rm") {
-      const next = j.ideaStep(idea.id, "older");
-      j.removeIdea(idea.id);
-      await ideaShow(next.id === idea.id ? undefined : j.idea(next.id), here);
-      notice = "Видалено";
+    if (parts[1] === "done") {
+      const ids = j.ideaIds();
+      const next = ids.length > 1 ? ids[(ids.indexOf(idea.id) + 1) % ids.length] : undefined;
+      j.setIdeaResolved(idea.id, at);
+      await ideaShow(next === undefined ? undefined : j.idea(next), here);
+      notice = "Вирішено";
+    } else if (parts[1] === "undo") {
+      j.setIdeaResolved(idea.id, null);
+      await ideaShow(j.idea(idea.id), here);
+      notice = "Повернено";
     }
   }
 
@@ -1043,7 +1064,7 @@ export async function handle(
     else if (cmd === "/ideas") {
       s.setContext(null);
       if (!journal) await send("Ідеї не підключено.", menu);
-      else await ideaShow(journal.newestIdea());
+      else await ideaShow(newestIdea());
     } else if (cmd === "/enrich") await enrich();
     else if (text === "Експорт" || cmd === "/export") {
       s.setContext(null);

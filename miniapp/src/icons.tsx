@@ -39,6 +39,17 @@ const paths = {
   negative: (
     <path d="M17 14V2M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.8a2 2 0 0 0-1.8 1.1L12 22a3.1 3.1 0 0 1-3-3.9Z" />
   ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  edit: <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17l-1 3Zm9-13 4 4" />,
+  check: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12.4 2.7 2.7L16 9.6" />
+    </>
+  ),
+  undo: <path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />,
+  close: <path d="m6 6 12 12M18 6 6 18" />,
+  down: <path d="m6 9 6 6 6-6" />,
   back: <path d="m15 5-7 7 7 7" />,
   next: <path d="m9 5 7 7-7 7" />,
   clear: (

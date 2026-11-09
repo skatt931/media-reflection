@@ -2,7 +2,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile, stat } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
+import type { Store } from "../store.ts";
 import { checkInitData } from "./auth.ts";
+import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
 
 // Listens on loopback only: the outside world reaches it through `tailscale serve <port>`.
 export const MINIAPP_HOST = "127.0.0.1";
@@ -12,6 +14,8 @@ export const MINIAPP_DIST = resolve(import.meta.dirname, "../../miniapp-dist");
 export type MiniAppOptions = {
   token: string;
   owner: number;
+  // The media library the screens read. Read-only: nothing here writes to it.
+  store?: Store;
   staticDir?: string;
   now?: () => Date;
 };
@@ -31,7 +35,7 @@ const TYPES: Record<string, string> = {
 // Telegram's own script is the only third-party origin. Framing stays allowed: Telegram Web embeds the app.
 const SECURITY = {
   "content-security-policy":
-    "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'",
+    "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
 };
@@ -53,21 +57,45 @@ function json(res: ServerResponse, status: number, value: unknown) {
   });
 }
 
-// Returns undefined for an unknown route. Every route gets here only after initData was verified.
-function route(path: string, userId: number): unknown {
-  if (path === "/api/me") return { userId };
-  return undefined;
+const LIBRARY_ID = /^\/api\/library\/([^/]+?)(\/cover)?$/;
+
+// Every route gets here only after initData was verified.
+async function route(url: URL, userId: number, res: ServerResponse, options: MiniAppOptions) {
+  const { pathname } = url;
+  if (pathname === "/api/me") return json(res, 200, { userId });
+  const store = options.store;
+  if (store && pathname === "/api/library")
+    return json(res, 200, libraryList(store, libraryFilter(url.searchParams)));
+  const match = store ? LIBRARY_ID.exec(pathname) : null;
+  if (store && match) {
+    let id: string;
+    try {
+      id = decodeURIComponent(match[1]);
+    } catch {
+      return json(res, 404, { error: "not_found" });
+    }
+    if (match[2]) {
+      const cover = libraryCover(store, id);
+      if (!cover) return json(res, 404, { error: "not_found" });
+      return send(res, 200, await readFile(cover.path), {
+        "content-type": cover.type,
+        "cache-control": "private, max-age=3600",
+      });
+    }
+    const item = libraryItem(store, id);
+    return item ? json(res, 200, item) : json(res, 404, { error: "not_found" });
+  }
+  return json(res, 404, { error: "not_found" });
 }
 
-async function api(req: IncomingMessage, res: ServerResponse, path: string, options: MiniAppOptions) {
+async function api(req: IncomingMessage, res: ServerResponse, url: URL, options: MiniAppOptions) {
   const header = req.headers.authorization ?? "";
   const checked = header.startsWith("tma ")
     ? checkInitData(header.slice(4), options.token, options.owner, options.now?.())
     : ({ ok: false } as const);
   // One answer for every refusal, so nothing reveals which check failed.
   if (!checked.ok) return json(res, 401, { error: "unauthorized" });
-  const body = route(path, checked.userId);
-  return body === undefined ? json(res, 404, { error: "not_found" }) : json(res, 200, body);
+  return route(url, checked.userId, res, options);
 }
 
 async function file(root: string, path: string) {
@@ -102,8 +130,9 @@ export function createMiniAppServer(options: MiniAppOptions): Server {
     try {
       if (req.method !== "GET" && req.method !== "HEAD")
         return send(res, 405, "Method not allowed", { allow: "GET, HEAD" });
-      const path = new URL(req.url ?? "/", "http://localhost").pathname;
-      if (path === "/api" || path.startsWith("/api/")) return await api(req, res, path, options);
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const path = url.pathname;
+      if (path === "/api" || path.startsWith("/api/")) return await api(req, res, url, options);
       await assets(req, res, path, root);
     } catch {
       if (!res.headersSent) send(res, 500, "Server error", { "content-type": "text/plain; charset=utf-8" });

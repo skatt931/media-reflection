@@ -131,7 +131,7 @@ const send: Send = async (text, keyboard, out = {}) => {
 async function openMiniApp() {
   try {
     const port = miniAppPort(process.env.MINIAPP_PORT);
-    if (port) miniApp = await startMiniApp({ token: token!, owner }, port);
+    if (port) miniApp = await startMiniApp({ token: token!, owner, store }, port);
   } catch (e) {
     console.error(e instanceof Error ? e.message : "Mini App не запущено.");
   }

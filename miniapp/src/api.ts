@@ -9,8 +9,17 @@ export class ApiError extends Error {
 }
 
 // Every request carries initData: the server checks it again each time.
-export async function get<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { authorization: `tma ${initData}` } });
+async function request(path: string, signal?: AbortSignal) {
+  const response = await fetch(path, { headers: { authorization: `tma ${initData}` }, signal });
   if (!response.ok) throw new ApiError(response.status);
-  return response.json() as Promise<T>;
+  return response;
+}
+
+export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return (await request(path, signal)).json() as Promise<T>;
+}
+
+// An <img> cannot send the header, so images are fetched with it and shown from a blob.
+export async function getBlob(path: string): Promise<Blob> {
+  return (await request(path)).blob();
 }

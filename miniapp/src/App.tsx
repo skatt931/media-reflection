@@ -1,15 +1,31 @@
 import { useEffect, useState } from "react";
 import { ApiError, get } from "./api.ts";
-import { initData } from "./telegram.ts";
+import { Detail } from "./library/Detail.tsx";
+import { DiaryTabIcon, IdeasTabIcon, MediaTabIcon } from "./library/icons.tsx";
+import { Library } from "./library/Library.tsx";
+import { initData, webApp } from "./telegram.ts";
 
 const sections = [
-  { id: "diary", icon: "📓", title: "Щоденник", hint: "Тут будуть записи щоденника." },
-  { id: "media", icon: "📚", title: "Медіатека", hint: "Тут буде медіатека." },
-  { id: "ideas", icon: "💡", title: "Ідеї", hint: "Тут будуть ідеї." },
+  { id: "diary", icon: <DiaryTabIcon />, title: "Щоденник", hint: "Тут будуть записи щоденника." },
+  { id: "media", icon: <MediaTabIcon />, title: "Медіатека", hint: "" },
+  { id: "ideas", icon: <IdeasTabIcon />, title: "Ідеї", hint: "Тут будуть ідеї." },
 ] as const;
 type SectionId = (typeof sections)[number]["id"];
 
-const fromHash = (): SectionId => sections.find((s) => `#/${s.id}` === location.hash)?.id ?? "diary";
+// #/media is the list, #/media/<id> a material.
+type Route = { section: SectionId; id: string | null };
+
+function fromHash(): Route {
+  const [, name, id] = location.hash.split("/");
+  const section = sections.find((s) => s.id === name)?.id ?? "diary";
+  let material: string | null = null;
+  try {
+    material = section === "media" && id ? decodeURIComponent(id) : null;
+  } catch {
+    // A malformed id is shown as the list.
+  }
+  return { section, id: material };
+}
 
 type Access = "checking" | "ok" | "outside" | "denied" | "failed";
 
@@ -31,14 +47,29 @@ function useAccess(): [Access, () => void] {
   return [access, () => setAttempt((n) => n + 1)];
 }
 
-function useSection(): [SectionId, (id: SectionId) => void] {
-  const [section, setSection] = useState(fromHash);
+function useRoute(): [Route, (id: SectionId) => void] {
+  const [route, setRoute] = useState(fromHash);
   useEffect(() => {
-    const onChange = () => setSection(fromHash());
+    const onChange = () => setRoute(fromHash());
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  return [section, (id) => (location.hash = `#/${id}`)];
+  return [route, (id) => (location.hash = `#/${id}`)];
+}
+
+// Telegram's own back button, shown only on a material.
+function useBackButton(visible: boolean) {
+  useEffect(() => {
+    const button = webApp?.BackButton;
+    if (!button || !visible) return;
+    const back = () => (history.length > 1 ? history.back() : (location.hash = "#/media"));
+    button.show();
+    button.onClick(back);
+    return () => {
+      button.offClick(back);
+      button.hide();
+    };
+  }, [visible]);
 }
 
 function Notice({ title, text, retry }: { title: string; text: string; retry?: () => void }) {
@@ -53,7 +84,8 @@ function Notice({ title, text, retry }: { title: string; text: string; retry?: (
 
 export function App() {
   const [access, retry] = useAccess();
-  const [section, open] = useSection();
+  const [{ section, id }, open] = useRoute();
+  useBackButton(access === "ok" && id !== null);
 
   if (access === "outside")
     return (
@@ -68,23 +100,29 @@ export function App() {
   const current = sections.find((s) => s.id === section)!;
   return (
     <>
-      <main className="screen">
-        <h1>{current.title}</h1>
-        <p className="empty">{current.hint}</p>
-      </main>
-      <nav className="tabs">
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            className={s.id === section ? "active" : ""}
-            aria-current={s.id === section ? "page" : undefined}
-            onClick={() => open(s.id)}
-          >
-            <span aria-hidden="true">{s.icon}</span>
-            {s.title}
-          </button>
-        ))}
-      </nav>
+      {section === "media" && <Library hidden={id !== null} />}
+      {section === "media" && id !== null && <Detail id={id} />}
+      {section !== "media" && (
+        <main className="screen">
+          <h1>{current.title}</h1>
+          <p className="empty">{current.hint}</p>
+        </main>
+      )}
+      {id === null && (
+        <nav className="tabs">
+          {sections.map((s) => (
+            <button
+              key={s.id}
+              className={s.id === section ? "active" : ""}
+              aria-current={s.id === section ? "page" : undefined}
+              onClick={() => open(s.id)}
+            >
+              {s.icon}
+              {s.title}
+            </button>
+          ))}
+        </nav>
+      )}
     </>
   );
 }

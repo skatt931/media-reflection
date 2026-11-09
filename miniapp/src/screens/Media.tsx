@@ -15,6 +15,7 @@ import {
   shortDate,
 } from "../format.ts";
 import { useBack, useDebounced, useResource, useScrollMemory } from "../hooks.ts";
+import { usePane } from "../stage/pane.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Bars, Empty, Failed, Marked } from "../parts.tsx";
 import { albumHash, collectionHash, materialHash } from "../router.ts";
@@ -44,33 +45,95 @@ export function Reaction({ reaction, label }: { reaction: string; label: string 
   );
 }
 
-// Your own last words about the material, two lines of them. A tap opens the rest in place (when there is a
-// rest), and the card itself still opens the material.
+const SLIDE_MS = 200;
+const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// Your own last words about the material, two lines of them. Where there is more, «Ще» says so and a tap opens
+// the rest in place: the card keeps its top and only grows downward. The card itself still opens the material.
 function Note({ thought, terms }: { thought: Thought; terms: string[] }) {
-  const [open, setOpen] = useState(false);
+  const pane = usePane();
+  // «closing» keeps the full text while the box shrinks; the two lines (and their ellipsis) return at the end.
+  const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
   const [cut, setCut] = useState(false);
+  const clip = useRef<HTMLSpanElement>(null);
   const text = useRef<HTMLSpanElement>(null);
+  const from = useRef(0);
+  const timer = useRef(0);
+  const closed = phase === "closed";
+
   useLayoutEffect(() => {
     const node = text.current;
-    if (!node || open) return;
+    if (!node || !closed) return;
     const measure = () => setCut(node.scrollHeight > node.clientHeight + 1);
     measure();
     const watch = new ResizeObserver(measure);
     watch.observe(node);
     return () => watch.disconnect();
-  }, [thought.body, open]);
-  const toggleOpen = cut || open;
+  }, [thought.body, closed]);
+
+  // The box slides between the height it had and the height it is going to have.
+  useLayoutEffect(() => {
+    const box = clip.current;
+    const words = text.current;
+    if (!box || !words || closed) return;
+    const opening = phase === "open";
+    const target = opening ? box.scrollHeight : parseFloat(getComputedStyle(words).lineHeight) * 2;
+    const done = () => {
+      box.style.height = "";
+      if (!opening) setPhase("closed");
+    };
+    if (reduced()) return done();
+    box.style.height = `${from.current}px`;
+    box.getBoundingClientRect();
+    box.style.height = `${target}px`;
+    timer.current = window.setTimeout(done, SLIDE_MS + 40);
+    return () => {
+      window.clearTimeout(timer.current);
+      box.style.height = "";
+    };
+  }, [phase, closed]);
+
+  const toggleOpen = () => {
+    const box = clip.current;
+    if (!box) return;
+    from.current = box.offsetHeight;
+    if (!closed) {
+      // The card is still above the top of the screen when the text is read to the end: keep it in sight.
+      const scroller = pane?.ref.current;
+      const card = box.closest(".item");
+      if (scroller && card) {
+        const heading = card.closest("section")?.querySelector(".month");
+        const edge = heading?.getBoundingClientRect().bottom ?? scroller.getBoundingClientRect().top;
+        const lost = edge - card.getBoundingClientRect().top;
+        if (lost > 0) scroller.scrollTop -= lost;
+      }
+    }
+    setPhase(phase === "open" ? "closing" : "open");
+  };
+
+  const open = phase === "open";
+  const hint = cut || !closed;
   return (
     <button
       type="button"
-      className={toggleOpen ? "note more" : "note"}
-      aria-expanded={toggleOpen ? open : undefined}
-      onClick={() => toggleOpen && setOpen(!open)}
+      className={hint ? "note more" : "note"}
+      aria-expanded={hint ? open : undefined}
+      onClick={() => hint && toggleOpen()}
     >
-      <span ref={text} className={open ? "words full" : "words"}>
-        <Marked text={thought.body} terms={terms} />
+      <span ref={clip} className="clip">
+        <span ref={text} className={closed ? "words" : "words full"}>
+          <Marked text={thought.body} terms={terms} />
+        </span>
       </span>
-      {open && <time dateTime={thought.date}>{dayMonth(thought.date)}</time>}
+      {hint && (
+        <span className="foot">
+          {!closed && <time dateTime={thought.date}>{dayMonth(thought.date)}</time>}
+          <span className="toggle" data-open={open}>
+            {open ? "Згорнути" : "Ще"}
+            <Icon name="down" size={16} />
+          </span>
+        </span>
+      )}
     </button>
   );
 }
@@ -110,27 +173,27 @@ export function Item({ card, labels, terms = [] }: { card: LibraryCard; labels: 
   );
 }
 
-// Collections as small mosaics, in one row you can scroll. The last tile starts a new one.
+// Collections as a low shelf: a small mosaic, the name and the count, in one row you can scroll. A new one starts
+// from the plus beside the heading.
 function Collections({ list, onNew }: { list: CollectionList; onNew: () => void }) {
   return (
-    <section className="strip-wrap" aria-label="Добірки">
-      <h2 className="sub">Добірки</h2>
+    <section className="colls" aria-label="Добірки">
+      <div className="colls-head">
+        <h2 className="sub">Добірки</h2>
+        <button className="colls-new" aria-label="Нова добірка" onClick={onNew}>
+          <Icon name="plus" size={20} />
+        </button>
+      </div>
       <div className="strip" data-noswipe>
         {list.collections.map((c) => (
           <a key={c.id} className="coll" href={collectionHash(c.id)}>
             <Mosaic tiles={c.tiles} />
-            <b>{c.name}</b>
-            <small>{materialsLabel(c.count)}</small>
+            <span className="said">
+              <b>{c.name}</b>
+              <small>{materialsLabel(c.count)}</small>
+            </span>
           </a>
         ))}
-        <button className="coll new" onClick={onNew}>
-          <span className="mosaic m1">
-            <span className="slot">
-              <Icon name="plus" size={26} />
-            </span>
-          </span>
-          <b>Нова добірка</b>
-        </button>
       </div>
     </section>
   );

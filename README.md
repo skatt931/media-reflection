@@ -87,6 +87,42 @@ tailscale serve --bg 8787
 
 Фронтенд лежить у `miniapp/`, зібране — у `miniapp-dist/` і **комітиться**: сервер лише робить `git merge --ff-only`, Vite на ньому немає. Після змін у `miniapp/` виконай `npm run miniapp:build` і закоміть результат; CI збирає знову й падає, якщо збірка розходиться із закоміченою. Розробка: `npm run miniapp:dev` (Vite; `/api` іде на бота, що працює локально; без Telegram сторінка покаже «Відкрий у Telegram»). Подивитися екрани без Telegram і без даних: відкрий `http://localhost:5173/?mock` з вигаданими записами й ідеями (ті самі функції відповідають, що й на сервері). `?mock=empty`, `?mock=error`, `?mock=slow` показують порожній, збійний і завантажувальний стани, `?mock=fail` — екрани, де кожен запис завершується помилкою (записи в mock живуть у пам'яті сторінки), `&theme=dark` вмикає темну тему. У збірці для сервера цього коду немає. З телефона в тій самій мережі: `npm run miniapp:dev -- --host`.
 
+## MCP: розмова з даними з Claude Code і Codex
+
+Сервер MCP ([src/mcp/](src/mcp/)) дає AI-клієнту на Mac ті самі дані, що й Mini App. Інструменти: `search_library`, `get_library_item`, `list_diary`, `get_diary_entry`, `list_ideas` і єдиний запис — `add_idea` (ідея дослівно, лише на твоє прохання). Правок медіатеки й видалення немає. Медіатека відкривається лише на читання (SQLite відхиляє запис), щоденник — для нових ідей. Без залежностей: JSON-RPC по stdio, одне повідомлення на рядок.
+
+Клієнт запускає процес по SSH на сервері, тож публічного URL і Tailscale на Mac не треба. Окремий ключ, який уміє лише це:
+
+```sh
+# Mac
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_media_reflection_mcp -C media-reflection-mcp
+```
+
+На сервері — рядок у `~/.ssh/authorized_keys` (вміст `.pub` після `restrict`):
+
+```text
+command="cd /home/ihor/media-reflection && exec /usr/local/bin/node --env-file-if-exists=.env src/mcp/main.ts",restrict ssh-ed25519 AAAA… media-reflection-mcp
+```
+
+У `~/.ssh/config` на Mac — окремий хост з тією ж адресою, що й `media-reflection`:
+
+```text
+Host media-reflection-mcp
+  HostName <адреса сервера>
+  User ihor
+  IdentityFile ~/.ssh/id_ed25519_media_reflection_mcp
+  IdentitiesOnly yes
+```
+
+Підключення:
+
+```sh
+claude mcp add --scope user media-reflection -- ssh media-reflection-mcp
+codex mcp add media-reflection -- ssh media-reflection-mcp
+```
+
+Перевірка без клієнта: `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ssh media-reflection-mcp`. Запускай `node`, а не `npm run`: банер npm іде в stdout і ламає протокол. Що відкрилося, а що ні, сервер пише в stderr. Текст щоденника, ідей і думок, який прочитає клієнт, іде в контекст обраної моделі (Anthropic чи OpenAI).
+
 ## Метадані сторінки
 
 Для посилання бот один раз завантажує початок сторінки (до `</head>`, максимум 1 МБ) і бере Open Graph: назву, автора, опис, обкладинку. Для Threads і Instagram назва береться з тексту допису. YouTube — через oEmbed. Короткі share-посилання (як `threads.com/share/…`) розгортаються. Якщо пост уже збережено, повторне share-посилання зливається з ним.

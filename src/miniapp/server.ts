@@ -70,9 +70,9 @@ function json(res: ServerResponse, status: number, value: unknown) {
   });
 }
 
-const diaryRows = (journal: JournalStore) =>
+export const diaryRows = (journal: JournalStore) =>
   journal.all("SELECT id, entry_date, body FROM journal_entries") as DiaryRow[];
-const ideaRows = (journal: JournalStore) =>
+export const ideaRows = (journal: JournalStore) =>
   journal.all("SELECT id, idea_date, idea_time, body, resolved_at FROM ideas") as IdeaRow[];
 
 const MAX_BODY = 512 * 1024;

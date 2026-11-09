@@ -15,9 +15,19 @@ export class Store {
   db: DatabaseSync;
   // Cover images live next to the database; null for in-memory stores.
   coverDir: string | null;
-  constructor(path: string) {
+  // `readOnly` is for a second process (the MCP server): it opens the bot's file as it is, with no migrations
+  // or clean-ups, and SQLite refuses any write.
+  constructor(path: string, options: { readOnly?: boolean } = {}) {
+    // The bot, the MCP server and the scripts open the same file; wait for a short lock instead of failing.
+    if (options.readOnly) {
+      this.db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
+      this.coverDir = join(dirname(path), "covers");
+      if (Number(this.all("PRAGMA user_version")[0].user_version) < 3)
+        throw new Error("Медіатеку ще не відкривав бот цієї версії, читання без міграції неможливе.");
+      return;
+    }
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.db = new DatabaseSync(path);
+    this.db = new DatabaseSync(path, { timeout: 5000 });
     this.coverDir = path === ":memory:" ? null : join(dirname(path), "covers");
     if (path !== ":memory:") chmodSync(path, 0o600);
     const previousVersion = Number(this.all("PRAGMA user_version")[0].user_version);

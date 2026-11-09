@@ -133,7 +133,6 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   background: var(--ground);
 }

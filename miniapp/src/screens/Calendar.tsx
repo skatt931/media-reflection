@@ -13,6 +13,7 @@ import {
 } from "../format.ts";
 import { useBack } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
+import { Overlay } from "../parts.tsx";
 
 const weekdays = ["пн", "вт", "ср", "чт", "пт", "сб", "нд"];
 
@@ -79,7 +80,7 @@ export function Calendar({
   const count = perMonth.get(key) ?? 0;
 
   return (
-    <>
+    <Overlay>
       <div className="scrim" onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-label="Календар" tabIndex={-1} ref={sheet}>
         <div className="grab" aria-hidden="true" />
@@ -142,6 +143,6 @@ export function Calendar({
           <button onClick={() => setShown(months.at(-1)!)}>Сьогодні</button>
         </div>
       </div>
-    </>
+    </Overlay>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { NO_REACTION, type Labels } from "../../../src/miniapp/library-types.ts";
 import { useBack } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
+import { Overlay } from "../parts.tsx";
 
 export type Filters = {
   types: string[];
@@ -60,7 +61,7 @@ export function FilterSheet({ filters, types, labels, shown, onChange, onClose }
   }, [onClose]);
 
   return (
-    <>
+    <Overlay>
       <div className="scrim" onClick={onClose} />
       <div
         className="sheet fsheet"
@@ -131,6 +132,6 @@ export function FilterSheet({ filters, types, labels, shown, onChange, onClose }
           {shown > 0 ? `Показати ${shown}` : "Нічого не знайдено"}
         </button>
       </div>
-    </>
+    </Overlay>
   );
 }

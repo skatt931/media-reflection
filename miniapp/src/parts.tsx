@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useBack } from "./hooks.ts";
 import { nativeBack } from "./telegram.ts";
 import { Icon } from "./icons.tsx";
@@ -48,6 +49,11 @@ export function Marked({ text, terms }: { text: string; terms: string[] }) {
   return <>{text.split(pattern).map((piece, i) => (i % 2 ? <mark key={i}>{piece}</mark> : piece))}</>;
 }
 
+// Sheets are mounted at the root of the app, not in the pane of the screen that opened them: a pane is a
+// stacking context on iOS, which would keep its sheet below the tab bar.
+export const Overlay = ({ children }: { children: ReactNode }) =>
+  createPortal(children, document.querySelector(".app") ?? document.body);
+
 // A bottom sheet over the screen: Telegram's back button, Escape and a tap outside close it.
 export function Sheet({
   title,
@@ -72,7 +78,7 @@ export function Sheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, onClose]);
   return (
-    <>
+    <Overlay>
       <div className="scrim" onClick={onClose} />
       <div
         className={`sheet fsheet ${className}`}
@@ -88,7 +94,7 @@ export function Sheet({
         </div>
         {children}
       </div>
-    </>
+    </Overlay>
   );
 }
 

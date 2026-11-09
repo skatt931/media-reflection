@@ -33,16 +33,18 @@ export type Services = {
 const TTL = 30 * 60000;
 // A short message this soon after a bare link is treated as a comment on it.
 const ATTACH_WINDOW = 10 * 60000;
-// «Довідка» is always at hand: with the Mini App on the menu button there is no other list of commands.
-const menu = { keyboard: [["Бібліотека", "Запитати", "Експорт", "Довідка"]], resize_keyboard: true };
-const dialogMenu = {
-  keyboard: [["Скасувати"], ["Бібліотека", "Запитати", "Експорт", "Довідка"]],
-  resize_keyboard: true,
-};
+// Quick capture (diary, idea) and «Довідка» are always at hand: with the Mini App on the menu button
+// there is no other list of commands. Three per row so no label wraps on a phone.
+const menuRows = [
+  ["Щоденник", "Ідея", "Довідка"],
+  ["Бібліотека", "Запитати", "Експорт"],
+];
+const menu = { keyboard: menuRows, resize_keyboard: true };
+const dialogMenu = { keyboard: [["Скасувати"], ...menuRows], resize_keyboard: true };
 // An unfinished diary entry is saved by itself after this long without a new message.
 const DIARY_SILENCE = 60 * 60000;
 // Reply-keyboard buttons keep working while the diary is being written; anything else is diary text.
-const menuTexts = new Set(["Бібліотека", "Запитати", "Експорт", "Скасувати", "Довідка"]);
+const menuTexts = new Set(["Щоденник", "Ідея", "Бібліотека", "Запитати", "Експорт", "Скасувати", "Довідка"]);
 const icons: Record<string, string> = { loved: "❤️", positive: "👍", mixed: "😐", negative: "👎" };
 const button = (text: string, callback_data: string) => ({ text, callback_data });
 const short = (text: string, max = 80) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
@@ -1038,8 +1040,8 @@ export async function handle(
       const period = text.split(/\s+/)[1] ?? localDate().slice(0, 7);
       if (!validPeriod(period)) await send("Формат: /review, /review 2026-10 або /review 2026.", menu);
       else await showReview(period);
-    } else if (cmd === "/diary") await diaryOpen(text.replace(/^\S+/, "").trim());
-    else if (cmd === "/idea") await ideaOpen(text.replace(/^\S+/, "").trim());
+    } else if (cmd === "/diary" || text === "Щоденник") await diaryOpen(text.replace(/^\S+/, "").trim());
+    else if (cmd === "/idea" || text === "Ідея") await ideaOpen(text.replace(/^\S+/, "").trim());
     else if (cmd === "/ideas") {
       s.setContext(null);
       if (!journal) await send("Ідеї не підключено.", menu);

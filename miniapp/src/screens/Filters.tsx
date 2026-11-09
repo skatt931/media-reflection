@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { NO_REACTION, type Labels } from "../../../src/miniapp/library-types.ts";
-import { useBack } from "../hooks.ts";
+import { useBack, useFocusTrap, useSheetPull } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Overlay } from "../parts.tsx";
 
@@ -53,6 +53,9 @@ type Props = {
 export function FilterSheet({ filters, types, labels, shown, onChange, onClose }: Props) {
   useBack(true, onClose);
   const sheet = useRef<HTMLDivElement>(null);
+  const scrim = useRef<HTMLDivElement>(null);
+  const pull = useSheetPull(sheet, scrim, onClose);
+  useFocusTrap(sheet);
   useEffect(() => {
     sheet.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -62,7 +65,7 @@ export function FilterSheet({ filters, types, labels, shown, onChange, onClose }
 
   return (
     <Overlay>
-      <div className="scrim" onClick={onClose} />
+      <div className="scrim" ref={scrim} onClick={onClose} />
       <div
         className="sheet fsheet"
         role="dialog"
@@ -71,12 +74,19 @@ export function FilterSheet({ filters, types, labels, shown, onChange, onClose }
         tabIndex={-1}
         ref={sheet}
       >
-        <div className="grab" aria-hidden="true" />
-        <div className="sheet-top">
-          <h2>Фільтри</h2>
-          <button className="reset" disabled={!isFiltered(filters)} onClick={() => onChange(noFilters)}>
-            Скинути
-          </button>
+        <div className="sheet-head" {...pull}>
+          <div className="grab" aria-hidden="true" />
+          <div className="sheet-top">
+            <h2>Фільтри</h2>
+            <div className="sheet-acts">
+              <button className="reset" disabled={!isFiltered(filters)} onClick={() => onChange(noFilters)}>
+                Скинути
+              </button>
+              <button className="sheet-close" aria-label="Закрити" onClick={onClose}>
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+          </div>
         </div>
         <div className="fbody">
           <Group title="Тип">

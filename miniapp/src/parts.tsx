@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useBack } from "./hooks.ts";
 import { nativeBack } from "./telegram.ts";
@@ -104,5 +104,46 @@ export function Problem({ children }: { children: ReactNode }) {
     <p className="problem" role="alert">
       {children}
     </p>
+  );
+}
+
+// A finished action says so above the tab bar and offers to take it back. It goes away on its own, and at once
+// when a different screen takes over.
+const UNDO_MS = 7_000;
+export function UndoBar({
+  text,
+  undo,
+  onUndo,
+  onDone,
+}: {
+  text: string;
+  undo: string;
+  onUndo: () => void;
+  onDone: () => void;
+}) {
+  const [leaving, setLeaving] = useState(false);
+  const done = useRef(onDone);
+  done.current = onDone;
+  useEffect(() => {
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wait = window.setTimeout(() => (still ? done.current() : setLeaving(true)), UNDO_MS);
+    const leave = () => done.current();
+    window.addEventListener("hashchange", leave);
+    return () => {
+      window.clearTimeout(wait);
+      window.removeEventListener("hashchange", leave);
+    };
+  }, []);
+  return (
+    <Overlay>
+      <div
+        className={leaving ? "undo leaving" : "undo"}
+        role="status"
+        onAnimationEnd={() => leaving && done.current()}
+      >
+        <span>{text}</span>
+        <button onClick={onUndo}>{undo}</button>
+      </div>
+    </Overlay>
   );
 }

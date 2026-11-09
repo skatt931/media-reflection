@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type RefObject,
+} from "react";
 import { get } from "./api.ts";
 import { usePane } from "./stage/pane.ts";
 import { claimBack } from "./telegram.ts";
@@ -121,4 +129,128 @@ export function useScrollMemory(ready: boolean) {
   useLayoutEffect(() => {
     if (ready && pane?.ref.current) pane.ref.current.scrollTop = positions.get(pane.key) ?? 0;
   }, [ready, pane]);
+}
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// Focus stays inside an open dialog: Tab wraps from the last control to the first (and back), and when the dialog
+// closes focus returns to what opened it. Declare it before the effect that focuses the dialog.
+export function useFocusTrap(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const controls = () =>
+      [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const all = controls();
+      if (!all.length) return e.preventDefault();
+      const first = all[0];
+      const last = all[all.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === node)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !node.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (e.target instanceof Node && !node.contains(e.target)) (controls()[0] ?? node).focus();
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("focusin", onFocusIn);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [ref]);
+}
+
+const PULL_LOCK = 6;
+const PULL_FAR = 0.3;
+const PULL_FLICK = 0.5;
+const PULL_MS = 200;
+
+// A bottom sheet follows a finger that pulls its head down and leaves when it is pulled far enough or flicked;
+// otherwise it settles back. Spread the result on the head (handle and title); taps on the buttons inside it stay taps.
+export function useSheetPull(
+  sheet: RefObject<HTMLElement | null>,
+  scrim: RefObject<HTMLElement | null>,
+  onClose: () => void,
+) {
+  const latest = useRef(onClose);
+  latest.current = onClose;
+  const pull = useRef<{
+    id: number;
+    y0: number;
+    active: boolean;
+    samples: { y: number; t: number }[];
+  } | null>(null);
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const place = (y: number, ms = 0) => {
+    const box = sheet.current;
+    if (!box) return;
+    box.style.animation = "none";
+    box.style.transition = ms ? `transform ${ms}ms cubic-bezier(0.2, 0.8, 0.2, 1)` : "none";
+    box.style.transform = `translateY(${y}px)`;
+    const veil = scrim.current;
+    if (veil) {
+      veil.style.animation = "none";
+      veil.style.transition = ms ? `opacity ${ms}ms linear` : "none";
+      veil.style.opacity = String(Math.max(0, 1 - y / Math.max(1, box.offsetHeight)));
+    }
+  };
+
+  return {
+    onPointerDown(e: PointerEvent<HTMLElement>) {
+      if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+      pull.current = {
+        id: e.pointerId,
+        y0: e.clientY,
+        active: false,
+        samples: [{ y: e.clientY, t: e.timeStamp }],
+      };
+    },
+    onPointerMove(e: PointerEvent<HTMLElement>) {
+      const p = pull.current;
+      if (!p || e.pointerId !== p.id) return;
+      const dy = e.clientY - p.y0;
+      if (!p.active) {
+        if (dy < -PULL_LOCK) pull.current = null;
+        if (dy < PULL_LOCK) return;
+        p.active = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      p.samples.push({ y: e.clientY, t: e.timeStamp });
+      while (p.samples.length > 2 && e.timeStamp - p.samples[0].t > 100) p.samples.shift();
+      place(Math.max(0, dy));
+    },
+    onPointerUp(e: PointerEvent<HTMLElement>) {
+      const p = pull.current;
+      pull.current = null;
+      const box = sheet.current;
+      if (!p || !p.active || e.pointerId !== p.id || !box) return;
+      const dy = Math.max(0, e.clientY - p.y0);
+      const first = p.samples[0];
+      const speed = e.timeStamp > first.t ? (e.clientY - first.y) / (e.timeStamp - first.t) : 0;
+      const away = dy > box.offsetHeight * PULL_FAR || speed > PULL_FLICK;
+      if (!away) return place(0, PULL_MS);
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return latest.current();
+      place(box.offsetHeight, PULL_MS);
+      timer.current = window.setTimeout(() => latest.current(), PULL_MS);
+    },
+    onPointerCancel(e: PointerEvent<HTMLElement>) {
+      if (pull.current?.id !== e.pointerId) return;
+      const active = pull.current.active;
+      pull.current = null;
+      if (active) place(0, PULL_MS);
+    },
+  };
 }

@@ -33,9 +33,10 @@ export type Services = {
 const TTL = 30 * 60000;
 // A short message this soon after a bare link is treated as a comment on it.
 const ATTACH_WINDOW = 10 * 60000;
-const menu = { keyboard: [["Бібліотека", "Запитати", "Експорт"]], resize_keyboard: true };
+// «Довідка» is always at hand: with the Mini App on the menu button there is no other list of commands.
+const menu = { keyboard: [["Бібліотека", "Запитати", "Експорт", "Довідка"]], resize_keyboard: true };
 const dialogMenu = {
-  keyboard: [["Скасувати"], ["Бібліотека", "Запитати", "Експорт"]],
+  keyboard: [["Скасувати"], ["Бібліотека", "Запитати", "Експорт", "Довідка"]],
   resize_keyboard: true,
 };
 // An unfinished diary entry is saved by itself after this long without a new message.
@@ -328,8 +329,12 @@ const help: Record<string, { title: string; text: string }> = {
       "• /enrich — дозаповнити старі записи (назви, обкладинки, теги).",
   },
 };
-const helpIntro =
-  "Сюди можна кидати все, що дивишся, слухаєш і читаєш, — а потім знайти й згадати, що думав.\n\nОбери тему:";
+// Built from `commands`, so a new command shows up in the help without anyone remembering to add it.
+const helpIntro = () =>
+  "Сюди можна кидати все, що дивишся, слухаєш і читаєш, — а потім знайти й згадати, що думав.\n\n" +
+  `Команди:\n${commands.map((c) => `/${c.command} — ${c.description}`).join("\n")}\n\n` +
+  (process.env.MINIAPP_URL?.trim() ? "Mini App — кнопка «Відкрити» ліворуч від поля вводу.\n\n" : "") +
+  "Докладніше — за темою:";
 function helpButtons(current?: string) {
   const topics = Object.entries(help).map(([key, t]) =>
     button(key === current ? `· ${t.title} ·` : t.title, `help:${key}`),
@@ -337,7 +342,7 @@ function helpButtons(current?: string) {
   return { inline_keyboard: [...pairs(topics), ...(current ? [[button("← Зміст", "help:index")]] : [])] };
 }
 const helpText = (topic?: string) =>
-  topic && help[topic] ? `${help[topic].title}\n\n${help[topic].text}` : helpIntro;
+  topic && help[topic] ? `${help[topic].title}\n\n${help[topic].text}` : helpIntro();
 
 type Pager = { title: string; ids: string[]; index: number };
 const heading = (p: Pager) => `${p.title} · ${p.index + 1}/${p.ids.length}\n\n`;

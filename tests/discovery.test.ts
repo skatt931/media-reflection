@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store, normalizeTags } from "../src/store.ts";
 import { createSearch, retrieve } from "../src/search.ts";
-import { handle, type Out } from "../src/bot.ts";
+import { handle, commands, type Out } from "../src/bot.ts";
+import { JournalStore } from "../src/journal.ts";
 import { exportVault } from "../src/vault.ts";
 import type { AnalysisContext } from "../src/groq.ts";
 
@@ -152,6 +153,22 @@ test("help is one message whose topic buttons swap the text", async () => {
   await handle(s, cb(3, "help:index", first.id), 42, send);
   assert.equal(out.at(-1)!.text, first.text);
   assert.ok(!out.some((o) => /Відьмак/.test(o.text)));
+});
+
+test("help lists every command and «Довідка» is always on the keyboard", async () => {
+  const { s, out, send } = harness();
+  await handle(s, msg(1, "/start"), 42, send);
+  const hello = out.at(-2)!;
+  assert.deepEqual(hello.k.keyboard.at(-1), ["Бібліотека", "Запитати", "Експорт", "Довідка"]);
+  const index = out.at(-1)!.text;
+  for (const { command, description } of commands)
+    assert.ok(index.includes(`/${command} — ${description}`), command);
+  // The button is the same as the command.
+  await handle(s, msg(2, "Довідка"), 42, send);
+  assert.equal(out.at(-1)!.text, index);
+  // Inside a dialog the keyboard keeps it too.
+  await handle(s, msg(3, "/idea"), 42, send, undefined, { journal: new JournalStore(":memory:") });
+  assert.ok(out.at(-1)!.k.keyboard.flat().includes("Довідка"));
 });
 
 test("AI gets the existing tags; /enrich re-tags items done by the older prompt", async () => {

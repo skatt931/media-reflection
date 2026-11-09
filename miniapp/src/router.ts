@@ -21,7 +21,8 @@ export function parse(hash: string): Route {
       return { screen: "list", section };
     }
   }
-  const known = section === "ideas" ? "ideas" : "diary";
+  // An empty or unknown address is how the app is opened: it lands on the first tab, ideas.
+  const known = section === "diary" ? "diary" : "ideas";
   if (rest === "search")
     return { screen: "search", section: known, q: new URLSearchParams(query).get("q") ?? "" };
   if (known === "diary" && rest === "new") return { screen: "compose", section: "diary" };

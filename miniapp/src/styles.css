@@ -29,6 +29,7 @@
   --line: #e4e4e1;
   --accent: #1d5a46;
   --accent-tint: rgba(29, 90, 70, 0.11);
+  --alert: #a3392b;
   --serif: "Literata", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   /* Notches and home indicator (device) plus Telegram's own header and controls in fullscreen. */
@@ -54,6 +55,7 @@
   --line: #262628;
   --accent: #7fc9a8;
   --accent-tint: rgba(127, 201, 168, 0.15);
+  --alert: #e8806f;
   color-scheme: dark;
 }
 
@@ -843,8 +845,8 @@ mark {
 }
 .thoughts h2 {
   display: flex;
-  justify-content: space-between;
-  margin: 26px 0 4px;
+  gap: 8px;
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
@@ -894,4 +896,172 @@ mark {
   color: var(--ground);
   font-size: 16px;
   font-weight: 600;
+}
+
+/* writing: compose screen, text sheets, edit sheet */
+.label {
+  display: block;
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.datefield {
+  position: relative;
+  color: var(--ink);
+}
+.datefield input {
+  min-width: 0;
+}
+/* The whole field opens the picker; the icon next to it is only the picture. */
+.datefield input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.write {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--sunken);
+  color: var(--ink);
+  font: 16px/1.5 var(--sans);
+  caret-color: var(--accent);
+  resize: none;
+  outline: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.write.serif {
+  font: 17px/1.6 var(--serif);
+}
+.write:focus {
+  outline: 2px solid var(--accent);
+}
+.write::placeholder {
+  color: var(--faint);
+}
+.write.page {
+  min-height: 46vh;
+  font-size: 18px;
+  overflow: hidden;
+}
+.compose {
+  padding-bottom: calc(var(--inset-bottom) + 96px);
+}
+.textsheet .write {
+  margin-top: 14px;
+  min-height: 120px;
+  max-height: 40vh;
+}
+.textsheet .go {
+  margin-top: 14px;
+}
+.problem {
+  margin-top: 12px;
+  font-size: 14.5px;
+  color: var(--alert);
+}
+.textbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+}
+.detailbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+}
+.detailbar .textbtn {
+  margin-left: auto;
+  margin-right: -4px;
+}
+.thead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 0;
+}
+.idea.has-action {
+  grid-template-columns: 46px 1fr 44px;
+}
+.idea-act {
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px -10px 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--faint);
+}
+@media (hover: hover) {
+  .idea-act:hover {
+    color: var(--accent);
+  }
+}
+.resolved {
+  margin-top: 28px;
+}
+.resolved summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.resolved summary::-webkit-details-marker {
+  display: none;
+}
+.resolved .n {
+  font-weight: 400;
+  color: var(--faint);
+}
+.resolved summary svg {
+  margin-left: auto;
+  transition: transform 180ms ease-out;
+}
+.resolved[open] summary svg {
+  transform: rotate(180deg);
+}
+.resolved .idea p {
+  color: var(--muted);
+}
+.resolved .idea.has-action {
+  grid-template-columns: 64px 1fr 44px;
+}
+.tagadd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.tagadd .input {
+  flex: 1;
+}
+.tagadd button {
+  height: 44px;
+  padding: 0 4px;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .resolved summary svg {
+    transition: none;
+  }
 }

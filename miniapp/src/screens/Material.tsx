@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { LibraryItem } from "../../../src/miniapp/library-types.ts";
-import { ApiError } from "../api.ts";
+import { ApiError, send } from "../api.ts";
 import { dayMonth } from "../format.ts";
 import { useBack, useResource } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
@@ -8,9 +8,15 @@ import { Cover } from "../library/Cover.tsx";
 import { BackBar, Bars, Empty, Failed } from "../parts.tsx";
 import { goBack, sectionHash } from "../router.ts";
 import { openLink } from "../telegram.ts";
+import { EditSheet } from "./EditSheet.tsx";
+import { TextSheet } from "./TextSheet.tsx";
+
+const IMPRESSION_LIMIT = 4_000;
 
 export function Material({ id }: { id: string }) {
   const item = useResource<LibraryItem>(`/api/library/${encodeURIComponent(id)}`);
+  const [editing, setEditing] = useState(false);
+  const [noting, setNoting] = useState(false);
   const back = () => goBack(sectionHash("media"));
   useBack(true, back);
   useEffect(() => {
@@ -23,7 +29,15 @@ export function Material({ id }: { id: string }) {
   return (
     <>
       <main className={data?.url ? "screen detail with-open" : "screen detail"}>
-        <BackBar onBack={back} />
+        <div className="detailbar">
+          <BackBar onBack={back} />
+          {data && (
+            <button className="textbtn" onClick={() => setEditing(true)}>
+              <Icon name="edit" size={18} />
+              Змінити
+            </button>
+          )}
+        </div>
         {data ? (
           <article>
             {data.cover && <Cover id={data.id} title={data.title} has large />}
@@ -53,10 +67,16 @@ export function Material({ id }: { id: string }) {
             )}
             {data.entities.length > 0 && <p className="mentions">Згадано: {data.entities.join(", ")}</p>}
             <section className="thoughts">
-              <h2>
-                Враження
-                {data.impressions.length > 0 && <span>{data.impressions.length}</span>}
-              </h2>
+              <div className="thead">
+                <h2>
+                  Враження
+                  {data.impressions.length > 0 && <span>{data.impressions.length}</span>}
+                </h2>
+                <button className="textbtn" onClick={() => setNoting(true)}>
+                  <Icon name="plus" size={18} />
+                  Додати
+                </button>
+              </div>
               {data.impressions.length ? (
                 data.impressions.map((note, i) => (
                   <div className="thought" key={i}>
@@ -79,6 +99,24 @@ export function Material({ id }: { id: string }) {
           <Bars className="reading" rows={[100, 45, 90, 70, 100, 95, 60]} />
         )}
       </main>
+      {data && editing && <EditSheet item={data} onChange={item.set} onClose={() => setEditing(false)} />}
+      {data && noting && (
+        <TextSheet
+          title="Нове враження"
+          placeholder="Що думаєш про це?"
+          draftKey={`draft:impression:${data.id}`}
+          limit={IMPRESSION_LIMIT}
+          serif
+          onClose={() => setNoting(false)}
+          save={async (body) =>
+            item.set(
+              await send<LibraryItem>("POST", `/api/library/${encodeURIComponent(data.id)}/impressions`, {
+                body,
+              }),
+            )
+          }
+        />
+      )}
       {data?.url && (
         <div className="openbar">
           <button className="open" onClick={() => openLink(data.url!)}>

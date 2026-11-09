@@ -555,6 +555,8 @@ export async function handle(
           type: item.type,
           source: item.site ?? item.source,
           description: item.description ?? null,
+          creator: item.creator,
+          summary: item.summary,
           notes: s
             .reflections(id)
             .slice(-3)

@@ -372,6 +372,15 @@ export class Store {
       .filter((i) => !i.snooze_until || i.snooze_until <= today)
       .filter((i) => i.type !== "resource" && i.status !== "saved");
   }
+  // Seen items with no written thought, whatever the reaction and the type (resources and videos included):
+  // unlike `unreflected`, a reaction alone does not take an item out of this set.
+  unthought() {
+    return this.all(
+      "SELECT * FROM items i WHERE NOT EXISTS(SELECT 1 FROM reflections r WHERE r.item_id=i.id) ORDER BY created_at,rowid",
+    )
+      .map((r) => this.unpack(r))
+      .filter((i) => i.status !== "saved");
+  }
   // The vault note is cleaned up by the next export (see exportVault).
   deleteItem(id: string) {
     const item = this.item(id);

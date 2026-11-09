@@ -7,7 +7,15 @@ import type { Store } from "../store.ts";
 import { checkInitData } from "./auth.ts";
 import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
 import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
-import { addDiaryEntry, addIdea, addImpression, editItem, resolveIdea, type Written } from "./write.ts";
+import {
+  addDiaryEntry,
+  addIdea,
+  addImpression,
+  editItem,
+  deleteIdea,
+  resolveIdea,
+  type Written,
+} from "./write.ts";
 
 // Listens on loopback only: the outside world reaches it through `tailscale serve <port>`.
 export const MINIAPP_HOST = "127.0.0.1";
@@ -156,7 +164,7 @@ async function route(
   if (path === "/api/library" || path.startsWith("/api/library/"))
     return library(req, url, res, options.store);
   const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
-  const idea = /^\/api\/ideas\/(\d{1,15})\/(resolve|restore)$/.exec(path);
+  const idea = /^\/api\/ideas\/(\d{1,15})\/(resolve|restore|delete)$/.exec(path);
   if (path !== "/api/diary" && path !== "/api/ideas" && !diary && !idea) return notFound(res);
   const journal = options.journal;
   if (!journal) return unavailable(res);
@@ -166,6 +174,7 @@ async function route(
       return answer(res, addDiaryEntry(journal, await readBody(req), options.now?.()), 201);
     if (path === "/api/ideas")
       return answer(res, addIdea(journal, await readBody(req), options.now?.()), 201);
+    if (idea?.[2] === "delete") return answer(res, deleteIdea(journal, Number(idea[1])));
     if (idea)
       return answer(res, resolveIdea(journal, Number(idea[1]), idea[2] === "resolve", options.now?.()));
   }

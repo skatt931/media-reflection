@@ -157,6 +157,34 @@ test("library: «Без вражень» matches the bot", async () => {
   assert.deepEqual(titles(await list("?unreviewed=1&type=podcast")), []);
 });
 
+test("library: «Без думки» keeps what has no thought, whatever the reaction and type", async () => {
+  // Seen, no written thought: the game and the resource. «На потім» is not seen yet, the others have notes.
+  assert.deepEqual(titles(await list("?nothought=1")), ["Тиха гавань", "Галерея екранів"]);
+  assert.equal((await list()).counts.noThought, 2);
+  assert.deepEqual(titles(await list("?nothought=1&type=resource")), ["Галерея екранів"]);
+
+  // A reaction alone does not take an item out of «Без думки» (it does out of «Без вражень»).
+  store.patch(ids.resource, { reaction: "positive" });
+  store.patch(ids.game, { reaction: "loved" });
+  try {
+    assert.deepEqual(titles(await list("?nothought=1")), ["Тиха гавань", "Галерея екранів"]);
+    const cards = (await list()).items;
+    const flag = (title: string) => cards.find((c: any) => c.title === title).noThought;
+    assert.equal(flag("Тиха гавань"), true);
+    assert.equal(flag("Галерея екранів"), true);
+    assert.equal(flag("Повільний дизайн"), false);
+    assert.equal(flag("Прочитати пізніше"), false);
+    // A thought takes it out.
+    store.addReflection(103, ids.game, "Заграв до ночі.", at("2026-11-09"));
+    assert.deepEqual(titles(await list("?nothought=1")), ["Галерея екранів"]);
+    assert.equal((await list()).counts.noThought, 1);
+  } finally {
+    store.patch(ids.resource, { reaction: null });
+    store.patch(ids.game, { reaction: null });
+    store.run("DELETE FROM reflections WHERE item_id=?", ids.game);
+  }
+});
+
 test("library: search ignores endings and looks in notes", async () => {
   assert.deepEqual(titles(await list("?q=" + encodeURIComponent("повільного дизайну"))), [
     "Повільний дизайн",

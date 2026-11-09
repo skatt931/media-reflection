@@ -40,6 +40,7 @@ export type LibraryFilter = {
   statuses: string[];
   reactions: string[];
   unreviewed: boolean;
+  noThought: boolean;
 };
 
 export function libraryFilter(params: URLSearchParams): LibraryFilter {
@@ -49,11 +50,12 @@ export function libraryFilter(params: URLSearchParams): LibraryFilter {
     statuses: list(params.get("status")),
     reactions: list(params.get("reaction")),
     unreviewed: params.get("unreviewed") === "1",
+    noThought: params.get("nothought") === "1",
   };
 }
 
 // Only what the screens show: bookkeeping fields (manual locks, metadata versions) stay on the server.
-function card(s: Store, item: Row, unreviewed: Set<string>): LibraryCard {
+function card(s: Store, item: Row, unreviewed: Set<string>, noThought: Set<string>): LibraryCard {
   return {
     id: item.id as string,
     title: item.title as string,
@@ -66,13 +68,20 @@ function card(s: Store, item: Row, unreviewed: Set<string>): LibraryCard {
     tags: ((item.tags as string[] | undefined) ?? []).slice(0, 3),
     cover: coverOf(s, item) !== null,
     unreviewed: unreviewed.has(item.id),
+    noThought: noThought.has(item.id),
   };
 }
 
 export function libraryList(s: Store, filter: LibraryFilter, today = localDate()): LibraryList {
   const unreviewed = new Set<string>(s.unreflected(today).map((i) => i.id));
+  const noThought = new Set<string>(s.unthought().map((i) => i.id));
   const all = s.items();
-  const counts = { saved: 0, unreviewed: unreviewed.size, types: {} as Record<string, number> };
+  const counts = {
+    saved: 0,
+    unreviewed: unreviewed.size,
+    noThought: noThought.size,
+    types: {} as Record<string, number>,
+  };
   for (const item of all) {
     if (item.status === "saved") counts.saved++;
     counts.types[item.type] = (counts.types[item.type] ?? 0) + 1;
@@ -100,10 +109,11 @@ export function libraryList(s: Store, filter: LibraryFilter, today = localDate()
         (!filter.types.length || filter.types.includes(item.type)) &&
         (!filter.statuses.length || filter.statuses.includes(item.status)) &&
         (!filter.reactions.length || filter.reactions.includes(item.reaction ?? NO_REACTION)) &&
-        (!filter.unreviewed || unreviewed.has(item.id)),
+        (!filter.unreviewed || unreviewed.has(item.id)) &&
+        (!filter.noThought || noThought.has(item.id)),
     )
     .sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || b.created_at.localeCompare(a.created_at))
-    .map((item) => card(s, item, unreviewed));
+    .map((item) => card(s, item, unreviewed, noThought));
   return { items, total: all.length, counts, labels };
 }
 
@@ -111,7 +121,7 @@ export function libraryItem(s: Store, id: string): LibraryItem | undefined {
   const item = s.item(id);
   if (!item) return undefined;
   return {
-    ...card(s, item, new Set(s.unreflected().map((i) => i.id))),
+    ...card(s, item, new Set(s.unreflected().map((i) => i.id)), new Set(s.unthought().map((i) => i.id))),
     url: web(item.url),
     summary: (item.summary as string | undefined) ?? null,
     description: (item.description as string | undefined) ?? null,

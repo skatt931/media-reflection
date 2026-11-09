@@ -141,6 +141,7 @@ const material = (
   tags,
   cover: false,
   unreviewed: status === "consumed" && notes.length === 0,
+  noThought: status !== "saved" && notes.length === 0,
   url: `https://${source}/`,
   summary:
     "Есей про те, як короткі паузи й тиша в інтерфейсі знижують тривогу та роблять рішення усвідомленішими.",
@@ -234,13 +235,15 @@ function mockLibrary(url: URL): LibraryList {
         (!types.length || types.includes(m.type)) &&
         (!statuses.length || statuses.includes(m.status ?? "")) &&
         (!reactions.length || reactions.includes(m.reaction ?? NO_REACTION)) &&
-        (url.searchParams.get("unreviewed") !== "1" || m.unreviewed),
+        (url.searchParams.get("unreviewed") !== "1" || m.unreviewed) &&
+        (url.searchParams.get("nothought") !== "1" || m.noThought),
     )
     .map(card);
-  const counts: LibraryList["counts"] = { saved: 0, unreviewed: 0, types: {} };
+  const counts: LibraryList["counts"] = { saved: 0, unreviewed: 0, noThought: 0, types: {} };
   for (const m of rows) {
     if (m.status === "saved") counts.saved++;
     if (m.unreviewed) counts.unreviewed++;
+    if (m.noThought) counts.noThought++;
     counts.types[m.type] = (counts.types[m.type] ?? 0) + 1;
   }
   return { items, total: rows.length, counts, labels };
@@ -286,10 +289,15 @@ export async function mockSend<T>(method: string, path: string, body: unknown): 
     ideas.push({ id, idea_date: isoDate(now), idea_time: time, body: input.body.trim(), resolved_at: null });
     return { id } as T;
   }
-  const idea = /^\/api\/ideas\/(\d+)\/(resolve|restore)$/.exec(url.pathname);
+  const idea = /^\/api\/ideas\/(\d+)\/(resolve|restore|delete)$/.exec(url.pathname);
   if (idea) {
     const row = ideas.find((i) => i.id === Number(idea[1]));
     if (!row) throw new ApiError(404);
+    if (idea[2] === "delete") {
+      if (!row.resolved_at) throw new ApiError(400);
+      ideas.splice(ideas.indexOf(row), 1);
+      return true as T;
+    }
     row.resolved_at = idea[2] === "resolve" ? now.toISOString() : null;
     return true as T;
   }
@@ -299,6 +307,7 @@ export async function mockSend<T>(method: string, path: string, body: unknown): 
   if (item[2]) {
     material.impressions.push({ date: isoDate(now), body: input.body.trim() });
     material.unreviewed = false;
+    material.noThought = false;
   } else {
     for (const key of ["type", "status", "reaction", "tags"] as const)
       if (key in input) (material as Record<string, unknown>)[key] = input[key];

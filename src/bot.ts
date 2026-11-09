@@ -201,12 +201,13 @@ function ideaCard(journal: JournalStore, idea: Record<string, any>) {
       button("←", `idea:open:${ids[(at - 1 + ids.length) % ids.length]}`),
       button("→", `idea:open:${ids[(at + 1) % ids.length]}`),
     ]);
-  // Nothing is deleted: an idea is resolved and can be brought back, as in the Mini App.
+  // An idea is resolved first and can be brought back; only a resolved one can be deleted, as in the Mini App.
   keyboard.push([
     resolved
       ? button("Повернути до ідей", `idea:undo:${idea.id}`)
       : button("Вирішено", `idea:done:${idea.id}`),
   ]);
+  if (resolved) keyboard.push([button("Видалити", `idea:rm:${idea.id}`)]);
   if (resolved) keyboard.push([button("← До ідей", "idea:list:open")]);
   else if (journal.ideaIds(true).length)
     keyboard.push([button(`Вирішені (${journal.ideaIds(true).length})`, "idea:list:resolved")]);
@@ -249,8 +250,8 @@ export const commands = [
 const libraryMenu = {
   inline_keyboard: [
     [button("Останні", "library:recent"), button("На потім", "library:later")],
-    [button("Без вражень", "library:unreviewed"), button("За типом", "library:types")],
-    [button("Підсумок місяця", "library:review")],
+    [button("Без вражень", "library:unreviewed"), button("Без думки", "library:nothought")],
+    [button("За типом", "library:types"), button("Підсумок місяця", "library:review")],
   ],
 };
 // Only the types that have items, most common first.
@@ -296,10 +297,11 @@ const help: Record<string, { title: string; text: string }> = {
   lists: {
     title: "Списки",
     text:
-      "«Бібліотека» — Останні, На потім, Без вражень, За типом.\n\n" +
+      "«Бібліотека» — Останні, На потім, Без вражень, Без думки, За типом.\n\n" +
       "• Список — одне повідомлення, гортай ← →.\n" +
       "• На будь-якій картці в списку можна реагувати чи відповісти думкою.\n" +
-      "• «Без вражень» — переглянуте, де ще немає ні реакції, ні думки.",
+      "• «Без вражень» — переглянуте, де ще немає ні реакції, ні думки.\n" +
+      "• «Без думки» — усе переглянуте, де ще немає твоєї думки, навіть якщо реакцію вже поставлено; ресурси й відео теж тут.",
   },
   diary: {
     title: "Щоденник",
@@ -317,7 +319,7 @@ const help: Record<string, { title: string; text: string }> = {
       "/idea текст — записати ідею одним рядком, бот відповість реакцією 👌. Без діалогу й підтверджень.\n\n" +
       "• /idea без тексту — наступне повідомлення (текст або голосове) стане ідеєю.\n" +
       "• Голосове розпізнається Groq (аудіо йде в сторонній сервіс).\n" +
-      "• /ideas — список від нових до старих, гортай ← →. «Вирішено» прибирає ідею зі списку (не видаляє): внизу «Вирішені», звідти її можна повернути. Так само в Mini App.\n" +
+      "• /ideas — список від нових до старих, гортай ← →. «Вирішено» прибирає ідею зі списку: внизу «Вирішені», звідти її можна повернути або видалити назавжди (з підтвердженням; живу ідею видалити не можна). Так само в Mini App.\n" +
       "• Раз на тиждень npm run journal:pull на Mac кладе кожну ідею окремим файлом у Journal/Ideas/Inbox в Obsidian.\n" +
       "• Це окремо від медіатеки й щоденника: не потрапляє в підсумки, «Без вражень» і пошук.",
   },
@@ -941,6 +943,29 @@ export async function handle(
       j.setIdeaResolved(idea.id, null);
       await ideaShow(j.idea(idea.id), here);
       notice = "Повернено";
+    } else if (parts[1] === "rm") {
+      if (!idea.resolved_at) {
+        await ideaShow(idea, here);
+        return;
+      }
+      await send(
+        `Видалити назавжди?\n\n${short(idea.body, 600)}`,
+        {
+          inline_keyboard: [
+            [button("Так, видалити", `idea:rmyes:${idea.id}`), button("Ні", `idea:open:${idea.id}`)],
+          ],
+        },
+        { edit: here },
+      );
+    } else if (parts[1] === "rmyes") {
+      const ids = j.ideaIds(true);
+      const next = ids.length > 1 ? ids[(ids.indexOf(idea.id) + 1) % ids.length] : undefined;
+      if (!j.deleteResolvedIdea(idea.id)) {
+        await ideaShow(idea, here);
+        return;
+      }
+      await ideaShow(next === undefined ? newestIdea() : j.idea(next), here);
+      notice = "Видалено";
     }
   }
 
@@ -1133,6 +1158,7 @@ export async function handle(
       else if (parts[1] === "types") await send("Який тип?", typeMenu(s), { edit: here });
       else if (parts[1] === "later") await list("На потім", later(), here);
       else if (parts[1] === "unreviewed") await list("Без вражень", s.unreflected(), here);
+      else if (parts[1] === "nothought") await list("Без думки", s.unthought(), here);
       else if (parts[1] === "review") await showReview(localDate().slice(0, 7), here);
       else await list("Останні", s.items(), here);
       return;

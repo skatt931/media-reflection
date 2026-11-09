@@ -17,12 +17,14 @@ export type LibraryCard = {
   tags: string[];
   cover: boolean;
   unreviewed: boolean;
+  // No written thought yet, even if there is a reaction; resources count too.
+  noThought: boolean;
 };
 
 export type LibraryList = {
   items: LibraryCard[];
   total: number;
-  counts: { saved: number; unreviewed: number; types: Record<string, number> };
+  counts: { saved: number; unreviewed: number; noThought: number; types: Record<string, number> };
   labels: Labels;
 };
 

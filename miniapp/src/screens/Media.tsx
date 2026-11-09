@@ -15,6 +15,7 @@ function path(filters: Filters, q: string) {
   if (filters.statuses.length) params.set("status", filters.statuses.join(","));
   if (filters.reactions.length) params.set("reaction", filters.reactions.join(","));
   if (filters.unreviewed) params.set("unreviewed", "1");
+  if (filters.noThought) params.set("nothought", "1");
   const text = params.toString();
   return `/api/library${text ? `?${text}` : ""}`;
 }
@@ -48,9 +49,14 @@ function Item({ card, data }: { card: LibraryCard; data: LibraryList }) {
         <p className="st">
           <span>{last}</span>
           {card.reaction ? (
-            <Reaction reaction={card.reaction} label={labels.reactions[card.reaction] ?? card.reaction} />
+            <span className="marks">
+              {card.noThought && <span className="none">Без думки</span>}
+              <Reaction reaction={card.reaction} label={labels.reactions[card.reaction] ?? card.reaction} />
+            </span>
           ) : card.unreviewed ? (
             <span className="none">Без вражень</span>
+          ) : card.noThought ? (
+            <span className="none">Без думки</span>
           ) : null}
         </p>
       </div>
@@ -176,6 +182,15 @@ export function Media() {
               onClick={() => setFilters({ ...filters, unreviewed: !filters.unreviewed })}
             >
               Без вражень <small>{data.counts.unreviewed}</small>
+            </button>
+          )}
+          {data.counts.noThought > 0 && (
+            <button
+              className="view"
+              aria-pressed={filters.noThought}
+              onClick={() => setFilters({ ...filters, noThought: !filters.noThought })}
+            >
+              Без думки <small>{data.counts.noThought}</small>
             </button>
           )}
           {types.map(([type, count]) => (

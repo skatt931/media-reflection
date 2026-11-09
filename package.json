@@ -9,7 +9,7 @@
     "start": "node --env-file-if-exists=.env src/main.ts",
     "setup": "node scripts/setup.mjs",
     "test": "node --test tests/*.test.ts",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc --noEmit -p miniapp",
     "export": "node --env-file-if-exists=.env scripts/export.ts",
     "setup:groq": "node scripts/setup-groq.mjs",
     "export:vault": "node --env-file-if-exists=.env scripts/export-vault.ts",
@@ -26,12 +26,20 @@
     "journal:manifest": "node --env-file-if-exists=.env scripts/import-journal.ts manifest",
     "journal:export": "node --env-file-if-exists=.env scripts/journal-export.ts",
     "journal:pull": "node --env-file-if-exists=.env scripts/journal-pull.mjs",
-    "format": "prettier --write src scripts tests",
-    "miniapp:probe": "node --env-file-if-exists=.env scripts/miniapp-probe.mjs"
+    "format": "prettier --write src scripts tests miniapp",
+    "miniapp:probe": "node --env-file-if-exists=.env scripts/miniapp-probe.mjs",
+    "miniapp:build": "vite build --config miniapp/vite.config.ts",
+    "miniapp:dev": "vite --config miniapp/vite.config.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "prettier": "^3.9.10",
-    "typescript": "^5.9.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.7"
   }
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { ApiError, get, mock } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
-import { sectionHash, useRoute, type Section } from "./router.ts";
+import { sectionHash, useRoute, type Route, type Section } from "./router.ts";
+import { Stage } from "./stage/Stage.tsx";
 import { initData } from "./telegram.ts";
 import { Compose } from "./screens/Compose.tsx";
 import { Diary } from "./screens/Diary.tsx";
@@ -47,9 +48,19 @@ function Notice({ title, text, retry }: { title: string; text: string; retry?: (
   );
 }
 
+function screenOf(route: Route) {
+  if (route.screen === "compose") return <Compose />;
+  if (route.screen === "entry") return <Entry id={route.id} />;
+  if (route.screen === "material") return <Material id={route.id} />;
+  if (route.screen === "search") return <Search section={route.section} initial={route.q} />;
+  if (route.section === "diary") return <Diary />;
+  return route.section === "ideas" ? <Ideas /> : <Media />;
+}
+
 export function App() {
   const [access, retry] = useAccess();
   const route = useRoute();
+  const [uncovering, setUncovering] = useState(false);
 
   if (access === "outside")
     return (
@@ -61,34 +72,24 @@ export function App() {
     return <Notice title="Не вдалося з'єднатися" text="Бот не відповів. Спробуй ще раз." retry={retry} />;
   if (access === "checking") return <Notice title="Завантаження…" text="" />;
 
-  const tabs = route.screen === "list";
+  // The tab bar belongs to the lists. It slides away when a screen opens over one and comes back with it.
+  const tabs = route.screen === "list" || uncovering;
   return (
     <div className="app">
-      {route.screen === "compose" ? (
-        <Compose />
-      ) : route.screen === "entry" ? (
-        <Entry key={route.id} id={route.id} />
-      ) : route.screen === "material" ? (
-        <Material key={route.id} id={route.id} />
-      ) : route.screen === "search" ? (
-        <Search key={route.section} section={route.section} initial={route.q} />
-      ) : route.section === "diary" ? (
-        <Diary />
-      ) : route.section === "ideas" ? (
-        <Ideas />
-      ) : (
-        <Media />
-      )}
-      {tabs && (
-        <nav className="tabs" aria-label="Розділи">
-          {sections.map((s) => (
-            <a key={s.id} href={sectionHash(s.id)} aria-current={s.id === route.section ? "page" : undefined}>
-              <Icon name={s.icon} />
-              {s.title}
-            </a>
-          ))}
-        </nav>
-      )}
+      <Stage route={route} render={screenOf} onReveal={setUncovering} />
+      <nav className={tabs ? "tabs" : "tabs away"} aria-label="Розділи" aria-hidden={!tabs}>
+        {sections.map((s) => (
+          <a
+            key={s.id}
+            href={sectionHash(s.id)}
+            tabIndex={tabs ? undefined : -1}
+            aria-current={s.id === route.section ? "page" : undefined}
+          >
+            <Icon name={s.icon} />
+            {s.title}
+          </a>
+        ))}
+      </nav>
     </div>
   );
 }

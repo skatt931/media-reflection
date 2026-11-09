@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { get } from "./api.ts";
+import { usePane } from "./stage/pane.ts";
 import { claimBack } from "./telegram.ts";
 
 type Resource<T> = { status: "loading" | "ok" | "error"; data?: T; error?: unknown };
@@ -105,16 +106,19 @@ export function useBack(active: boolean, handler: () => void) {
   useEffect(() => (active ? claimBack(() => latest.current()) : undefined), [active]);
 }
 
-// Back to a list lands where it was left: the position of every screen is kept by its address.
+// Back to a list lands where it was left: the position of every screen is kept by its address. Each screen
+// scrolls in its own pane, so a pane that is only passing by cannot disturb the position of another.
 const positions = new Map<string, number>();
 export function useScrollMemory(ready: boolean) {
+  const pane = usePane();
   useEffect(() => {
-    const key = location.hash;
-    const save = () => location.hash === key && positions.set(key, window.scrollY);
-    window.addEventListener("scroll", save, { passive: true });
-    return () => window.removeEventListener("scroll", save);
-  }, []);
+    const node = pane?.ref.current;
+    if (!pane || !node) return;
+    const save = () => positions.set(pane.key, node.scrollTop);
+    node.addEventListener("scroll", save, { passive: true });
+    return () => node.removeEventListener("scroll", save);
+  }, [pane]);
   useLayoutEffect(() => {
-    if (ready) window.scrollTo(0, positions.get(location.hash) ?? 0);
-  }, [ready]);
+    if (ready && pane?.ref.current) pane.ref.current.scrollTop = positions.get(pane.key) ?? 0;
+  }, [ready, pane]);
 }

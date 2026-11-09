@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { LibraryItem } from "../../../src/miniapp/library-types.ts";
 import { ApiError, send } from "../api.ts";
 import { dayMonth } from "../format.ts";
@@ -19,9 +19,6 @@ export function Material({ id }: { id: string }) {
   const [noting, setNoting] = useState(false);
   const back = () => goBack(sectionHash("media"));
   useBack(true, back);
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [id]);
   const data = item.data;
   const text = data?.summary ?? data?.description;
   const status = data?.status ? data.labels.statuses[data.status] : null;

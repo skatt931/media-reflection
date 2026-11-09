@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="uk" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A · Editorial, день як число</title>
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="a.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="data.js"></script>
+<script>
+const M = MOCK;
+const { icon, host, phone, esc, mark } = M;
+
+const tabs = (active) => `
+  <nav class="bar" aria-label="Розділи">
+    <a ${active === "diary" ? 'aria-current="page"' : ""}>${icon("diary")}Щоденник</a>
+    <a ${active === "media" ? 'aria-current="page"' : ""}>${icon("library")}Медіатека</a>
+    <a ${active === "ideas" ? 'aria-current="page"' : ""}>${icon("ideas")}Ідеї</a>
+  </nav><div class="inset"></div>`;
+
+const again = () => {
+  const e = M.entries.find((x) => x.date === "2025-11-09");
+  return `<aside class="again"><small>Рік тому, 9 листопада</small><p>${esc(e.text[0])}</p></aside>`;
+};
+
+const timelineRows = () => M.byMonth.filter((g) => g.year === 2026 && g.month >= 8).map((g) => `
+  <h2 class="month">${M.cap(M.MONTHS[g.month])} ${g.year}<span>${M.records(g.items.length)}</span></h2>
+  ${g.items.map((e) => { const x = M.d(e.date); return `
+    <a class="row"><div class="day"><b>${M.pad(x.getDate())}</b><span>${M.WD_SHORT[x.getDay()]}</span></div>
+    <p>${esc(e.text.join(" "))}</p></a>`; }).join("")}`).join("");
+
+const timeline = (extra = "") => phone(`${host()}
+  <main class="scr tabbed">
+    <header class="top"><h1>Щоденник</h1><div class="acts"><button aria-label="Пошук">${icon("search")}</button><button aria-label="Календар" ${extra ? 'aria-pressed="true"' : ""}>${icon("calendar")}</button></div></header>
+    ${again()}${timelineRows()}
+  </main>${tabs("diary")}${extra}`);
+
+const calendar = () => {
+  const counts = {};
+  M.entries.forEach((e) => { const k = e.date.slice(0, 7); counts[k] = (counts[k] || 0) + 1; });
+  const months = [[2026, 5], [2026, 6], [2026, 7], [2026, 8], [2026, 9], [2026, 10]];
+  const ribbon = months.map(([y, m]) => `<div class="chip ${m === 10 ? "on" : ""}"><b>${M.MONTHS_ABBR[m]}</b><small>${counts[`${y}-${M.pad(m + 1)}`] || "—"}</small></div>`).join("");
+  const has = new Set(M.entries.filter((e) => e.date.startsWith("2026-11")).map((e) => +e.date.slice(8)));
+  const first = (new Date(2026, 10, 1).getDay() + 6) % 7;
+  const cells = [...Array(first).fill('<div class="c"></div>')];
+  for (let n = 1; n <= 30; n++) cells.push(`<div class="c ${has.has(n) ? "has" : ""} ${n === 9 ? "today" : ""} ${n > 9 ? "future" : ""}"><span>${n}</span></div>`);
+  return timeline(`<div class="dim"></div>
+    <div class="sheet" role="dialog" aria-label="Календар">
+      <div class="grab"></div>
+      <div class="sheet-top"><h2>Листопад 2026</h2><div class="acts"><button aria-label="Раніше">${icon("back", 20)}</button><button aria-label="Пізніше">${icon("chevron", 20)}</button></div></div>
+      <div class="ribbon">${ribbon}</div>
+      <div class="cal">${["пн","вт","ср","чт","пт","сб","нд"].map((w) => `<div class="wd">${w}</div>`).join("")}${cells.join("")}</div>
+      <div class="sheet-foot"><span>${M.records(2)} у листопаді</span><button>Сьогодні</button></div>
+    </div>`);
+};
+
+const reader = () => {
+  const e = M.entries.find((x) => x.date === "2026-11-01"), x = M.d(e.date);
+  return phone(`${host({ back: true })}
+    <main class="scr"><article class="reader">
+      <p class="kicker">${M.WD_FULL[x.getDay()]}, ${x.getFullYear()}</p>
+      <h1>${x.getDate()} ${M.MONTHS_GEN[x.getMonth()]}</h1>
+      ${e.text.map((p) => `<p>${esc(p)}</p>`).join("")}
+    </article></main>`);
+};
+
+const search = () => {
+  const q = "велосипед", hits = M.entries.filter((e) => e.text.join(" ").toLowerCase().includes(q));
+  const snip = (e) => { const t = e.text.join(" "), i = t.toLowerCase().indexOf(q); return (i > 60 ? "…" + t.slice(t.indexOf(" ", i - 60) + 1) : t); };
+  return phone(`${host()}
+    <main class="scr">
+      <div class="field"><div class="input">${icon("search", 20)}<span class="val">${q}<i class="caret"></i></span>${icon("clear", 20)}</div><button class="cancel">Скасувати</button></div>
+      <p class="found">${M.records(hits.length)}</p>
+      ${hits.map((e) => { const x = M.d(e.date); return `
+        <a class="row"><div class="day"><b>${M.pad(x.getDate())}</b><span>${M.MONTHS_ABBR[x.getMonth()]}${x.getFullYear() !== 2026 ? " " + x.getFullYear() : ""}</span></div><p>${mark(snip(e), q)}</p></a>`; }).join("")}
+    </main>`);
+};
+
+const ideas = () => {
+  const groups = [];
+  M.ideas.forEach((i) => { const l = M.dayLabel(i.at); let g = groups.find((x) => x.l === l); if (!g) groups.push((g = { l, items: [] })); g.items.push(i); });
+  return phone(`${host()}
+    <main class="scr tabbed ideas">
+      <header class="top"><h1>Ідеї</h1><div class="acts"><button aria-label="Пошук">${icon("search")}</button></div></header>
+      ${groups.map((g) => `<h2 class="grp">${g.l}</h2>${g.items.map((i) => `<div class="idea"><time>${M.time(i.at)}</time><p>${esc(i.text)}</p></div>`).join("")}`).join("")}
+    </main>${tabs("ideas")}`);
+};
+
+
+// ---- media library ----
+const cover = (type) => {
+  const art = {
+    article: '<rect width="100" height="100" fill="#a9c4d6"/><rect y="74" width="100" height="26" fill="#7f9fb4"/><circle cx="50" cy="46" r="22" fill="#f0e9db"/>',
+    podcast: '<rect width="100" height="100" fill="#2f3437"/><g fill="none" stroke="#d6b66a" stroke-width="5"><circle cx="50" cy="50" r="34"/><circle cx="50" cy="50" r="23"/><circle cx="50" cy="50" r="12"/></g>',
+    resource: '<rect width="100" height="100" fill="#e4ddcf"/><rect x="13" y="13" width="35" height="35" rx="6" fill="#5d7a5f"/><rect x="52" y="13" width="35" height="35" rx="6" fill="#a9c4d6"/><rect x="13" y="52" width="35" height="35" rx="6" fill="#d6b66a"/><rect x="52" y="52" width="35" height="35" rx="6" fill="#2f3437"/>',
+    game: '<rect width="100" height="100" fill="#5d7a5f"/><circle cx="76" cy="24" r="9" fill="#f0e9db"/><path d="M0 100 34 44l36 56Z" fill="#9db8a8"/><path d="M42 100 76 54l34 46Z" fill="#7d9b86"/>',
+    album: '<rect width="100" height="100" fill="#8fa3b3"/><path d="M18 62a32 32 0 0 1 64 0Z" fill="#d6b66a"/><rect y="62" width="100" height="38" fill="#5f7585"/>',
+    video: '<rect width="100" height="100" fill="#2f3437"/><path d="M40 30 72 50 40 70Z" fill="#f0e9db"/>',
+    series: '<rect width="100" height="100" fill="#3c4a57"/><g fill="none" stroke-width="5"><circle cx="38" cy="50" r="22" stroke="#9db8a8"/><circle cx="62" cy="50" r="22" stroke="#d6b66a"/></g>',
+    book: '<rect width="100" height="100" fill="#d6b66a"/><rect x="28" y="16" width="44" height="68" rx="3" fill="#2f3437"/><circle cx="50" cy="40" r="9" fill="#d6b66a"/>',
+  }[type];
+  return `<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${art}</svg>`;
+};
+const rx = (r, size = 17) => `<span class="rx ${r}">${icon(M.REACTION_ICON[r], size)}${M.REACTION[r]}</span>`;
+const shortDate = (iso) => { const x = M.d(iso); return `${x.getDate()} ${M.MONTHS_ABBR[x.getMonth()]}`; };
+const needsReaction = (m) => !m.reaction && m.type !== "resource" && (m.status === "consumed" || m.status === "finished") && !m.thoughts.length;
+
+const mediaRow = (m) => `
+  <a class="item"><div class="cover">${cover(m.type)}</div>
+    <div><h3>${esc(m.title)}</h3>
+      <div class="by">${M.TYPES[m.type]}${m.creator ? " · " + esc(m.creator) : ""}</div>
+      <div class="st"><span>${m.status ? M.STATUS[m.status] + " · " + shortDate(m.on) : esc(m.tags.slice(0, 2).join(" · "))}</span>${m.reaction ? `<span class="rx ${m.reaction}">${icon(M.REACTION_ICON[m.reaction], 18)}</span>` : needsReaction(m) ? '<span class="none">Без вражень</span>' : ""}</div>
+    </div></a>`;
+
+const views = (on = "all") => {
+  const n = { all: M.media.length, saved: M.media.filter((m) => m.status === "saved").length, bare: M.media.filter(needsReaction).length };
+  return `<div class="views">
+    <span class="view ${on === "all" ? "on" : ""}">Усе <small>${n.all}</small></span>
+    <span class="view">На потім <small>${n.saved}</small></span>
+    <span class="view">Без вражень <small>${n.bare}</small></span>
+    <span class="view">Відео</span><span class="view">Подкасти</span><span class="view">Статті</span></div>`;
+};
+
+const mediaList = (extra = "", active = false) => phone(`${host()}
+  <main class="scr tabbed">
+    <header class="top"><h1>Медіатека</h1><div class="acts"><button aria-label="Пошук">${icon("search")}</button><button aria-label="Фільтри" ${active ? 'aria-pressed="true"' : ""}>${icon("sliders")}</button></div></header>
+    ${views()}
+    <h2 class="month">Листопад 2026<span>${M.media.filter((m) => m.on.startsWith("2026-11")).length} матеріалів</span></h2>
+    ${M.media.filter((m) => m.on.startsWith("2026-11")).map(mediaRow).join("")}
+    <h2 class="month">Жовтень 2026<span>${M.media.filter((m) => m.on.startsWith("2026-10")).length} матеріали</span></h2>
+    ${M.media.filter((m) => m.on.startsWith("2026-10")).map(mediaRow).join("")}
+  </main>${tabs("media")}${extra}`);
+
+const filters = () => {
+  const selTypes = ["article", "podcast"], selRx = ["loved", "positive"];
+  const hits = M.media.filter((m) => selTypes.includes(m.type) && selRx.includes(m.reaction)).length;
+  const opt = (label, on, ic = "") => `<span class="opt ${on ? "on" : ""}">${ic}${label}</span>`;
+  return mediaList(`<div class="dim"></div>
+    <div class="sheet fsheet" role="dialog" aria-label="Фільтри">
+      <div class="grab"></div>
+      <div class="sheet-top"><h2>Фільтри</h2><button class="reset">Скинути</button></div>
+      <div class="fgrp"><h3>Тип</h3><div class="opts">${["article","podcast","video","series","album","game","book","resource"].map((t) => opt(M.TYPES[t], selTypes.includes(t))).join("")}<span class="opt">Ще 4</span></div></div>
+      <div class="fgrp"><h3>Стан</h3><div class="opts">${Object.entries(M.STATUS).map(([k, v]) => opt(v, false)).join("")}</div></div>
+      <div class="fgrp"><h3>Реакція</h3><div class="opts">${Object.entries(M.REACTION).map(([k, v]) => opt(v, selRx.includes(k), icon(M.REACTION_ICON[k], 17))).join("")}${opt("Без реакції", false)}</div></div>
+      <button class="go">Показати ${hits}</button>
+    </div>`, true);
+};
+
+const mediaDetail = () => {
+  const m = M.media[0];
+  return phone(`${host({ back: true })}
+    <main class="scr"><article class="detail">
+      <div class="hero">${cover(m.type)}</div>
+      <p class="kicker">${M.TYPES[m.type]} · ${m.source}</p>
+      <h1>${esc(m.title)}</h1>
+      <p class="creator">${esc(m.creator)}</p>
+      <div class="facts">${rx(m.reaction, 19)}<span class="when">${M.STATUS[m.status]}, ${M.d(m.on).getDate()} ${M.MONTHS_GEN[M.d(m.on).getMonth()]}</span></div>
+      <p class="about">${esc(m.summary)}</p>
+      <div class="tags">${m.tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>
+      <section class="thoughts"><h2>Враження<span>${m.thoughts.length}</span></h2>
+        ${m.thoughts.map((t) => `<div class="thought"><time>${M.d(t.at).getDate()} ${M.MONTHS_GEN[M.d(t.at).getMonth()]}</time><p>${esc(t.text)}</p></div>`).join("")}
+      </section>
+    </article></main>
+    <div class="openbar"><a class="open">${icon("external", 19)}Відкрити джерело</a></div><div class="openpad"></div>`);
+};
+
+const first = M.board("A · Editorial, день як число",
+  "Серіф для того, що ти написав; системний шрифт для самого застосунку. Дні як великі числа, жодних карток, один зелений акцент лише на даних. Вигадані дані; обкладинки — намальовані заглушки замість справжніх.",
+  [["Щоденник", timeline()], ["Календар (шторка)", calendar()], ["Запис", reader()], ["Пошук", search()], ["Ідеї", ideas()]]);
+const second = `<h2 class="rowlabel">Медіатека</h2><div class="board second">${[["Медіатека", mediaList()], ["Фільтри (шторка)", filters()], ["Матеріал", mediaDetail()]].map(([n, h]) => `<figure><div class="slot">${h}</div><figcaption>${n}</figcaption></figure>`).join("")}</div>`;
+M.mount(document.getElementById("app"), first + second);
+</script>
+</body>
+</html>

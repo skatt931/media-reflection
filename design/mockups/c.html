@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="uk" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C · Рідний Telegram</title>
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="c.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="data.js"></script>
+<script>
+const M = MOCK;
+const { icon, host, phone, esc, mark } = M;
+
+const tabs = (active) => `
+  <nav class="bar" aria-label="Розділи">
+    <a ${active === "diary" ? 'aria-current="page"' : ""}>${icon("diary")}Щоденник</a>
+    <a ${active === "ideas" ? 'aria-current="page"' : ""}>${icon("ideas")}Ідеї</a>
+  </nav><div class="inset"></div>`;
+
+const cell = (e, q) => {
+  const x = M.d(e.date), t = e.text.join(" ");
+  let body = t;
+  if (q) { const i = t.toLowerCase().indexOf(q); body = i > 60 ? "…" + t.slice(t.indexOf(" ", i - 60) + 1) : t; }
+  return `<a class="cell"><div class="t">${x.getDate()} ${M.MONTHS_GEN[x.getMonth()]}<small>${M.WD_SHORT[x.getDay()]}</small></div><p>${q ? mark(body, q) : esc(body)}</p>${icon("chevron", 16)}</a>`;
+};
+
+const timeline = (extra = "") => phone(`${host()}
+  <main class="scr">
+    <header class="top"><h1>Щоденник</h1></header>
+    <div class="search">${icon("search", 18)}<span>Пошук за словами</span></div>
+    <aside class="again"><small>Рік тому, 9 листопада</small><p>${esc(M.entries.find((x) => x.date === "2025-11-09").text[0])}</p></aside>
+    ${M.byMonth.filter((g) => g.year === 2026 && g.month >= 9).map((g) => `
+      <div class="gh"><span>${M.cap(M.MONTHS[g.month])} ${g.year}</span><span>${M.records(g.items.length)}</span></div>
+      <div class="group">${g.items.map((e) => cell(e)).join("")}</div>`).join("")}
+  </main>${tabs("diary")}${extra}`);
+
+const calendar = () => {
+  const has = new Set(M.entries.filter((e) => e.date.startsWith("2026-11")).map((e) => +e.date.slice(8)));
+  const first = (new Date(2026, 10, 1).getDay() + 6) % 7;
+  const cells = [...Array(first).fill('<div class="c"></div>')];
+  for (let n = 1; n <= 30; n++) cells.push(`<div class="c ${has.has(n) ? "has" : ""} ${n === 9 ? "today" : ""} ${n > 9 ? "future" : ""}"><span>${n}</span></div>`);
+  return timeline(`<div class="dim"></div>
+    <div class="sheet" role="dialog" aria-label="Календар">
+      <div class="nav"><span></span><b>Календар</b><button>Готово</button></div>
+      <div class="card">
+        <div class="mh2"><span>Листопад 2026</span><span class="acts">${icon("back", 20)}${icon("chevron", 20)}</span></div>
+        <div class="cal">${["пн","вт","ср","чт","пт","сб","нд"].map((w) => `<div class="wd">${w}</div>`).join("")}${cells.join("")}</div>
+      </div>
+      <p class="foot">${M.records(2)} у листопаді. Синім позначено дні із записами.</p>
+    </div>`);
+};
+
+const reader = () => {
+  const e = M.entries.find((x) => x.date === "2026-11-01"), x = M.d(e.date);
+  return phone(`${host({ back: true })}
+    <main class="scr"><article class="reader">
+      <h1>${x.getDate()} ${M.MONTHS_GEN[x.getMonth()]} ${x.getFullYear()}</h1>
+      <p class="sub">${M.cap(M.WD_FULL[x.getDay()])} · ${M.words(e)} слів</p>
+      ${e.text.map((p) => `<p>${esc(p)}</p>`).join("")}
+    </article></main>`);
+};
+
+const search = () => {
+  const q = "велосипед", hits = M.entries.filter((e) => e.text.join(" ").toLowerCase().includes(q));
+  return phone(`${host()}
+    <main class="scr">
+      <div class="field"><div class="search focus">${icon("search", 18)}<span class="val">${q}<i class="caret"></i></span>${icon("clear", 18)}</div><button class="cancel">Скасувати</button></div>
+      <p class="found">${M.records(hits.length)}</p>
+      <div class="group" style="margin-top:7px">${hits.map((e) => cell(e, q)).join("")}</div>
+    </main>`);
+};
+
+const ideas = () => {
+  const groups = [];
+  M.ideas.forEach((i) => { const l = M.dayLabel(i.at); let g = groups.find((x) => x.l === l); if (!g) groups.push((g = { l, items: [] })); g.items.push(i); });
+  return phone(`${host()}
+    <main class="scr">
+      <header class="top"><h1>Ідеї</h1></header>
+      <div class="search">${icon("search", 18)}<span>Пошук за словами</span></div>
+      ${groups.slice(0, 3).map((g) => `<div class="gh"><span>${g.l}</span><span>${g.items.length}</span></div><div class="group">${g.items.map((i) => `<div class="idea"><p>${esc(i.text)}</p><time>${M.time(i.at)}</time></div>`).join("")}</div>`).join("")}
+    </main>${tabs("ideas")}`);
+};
+
+M.mount(document.getElementById("app"), M.board("C · Рідний Telegram",
+  "Системний шрифт, згруповані списки на сірому тлі, синій акцент Telegram. Найменший ризик і найменше роботи: виглядає так само, як решта Telegram. Вигадані записи.",
+  [["Щоденник", timeline()], ["Календар (шторка)", calendar()], ["Запис", reader()], ["Пошук", search()], ["Ідеї", ideas()]]));
+</script>
+</body>
+</html>

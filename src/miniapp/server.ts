@@ -2,7 +2,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile, stat } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
+import type { JournalStore } from "../journal.ts";
 import { checkInitData } from "./auth.ts";
+import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
 
 // Listens on loopback only: the outside world reaches it through `tailscale serve <port>`.
 export const MINIAPP_HOST = "127.0.0.1";
@@ -12,6 +14,8 @@ export const MINIAPP_DIST = resolve(import.meta.dirname, "../../miniapp-dist");
 export type MiniAppOptions = {
   token: string;
   owner: number;
+  // Diary and ideas; without it those routes answer 503 and the rest of the app still works.
+  journal?: JournalStore;
   staticDir?: string;
   now?: () => Date;
 };
@@ -53,21 +57,36 @@ function json(res: ServerResponse, status: number, value: unknown) {
   });
 }
 
-// Returns undefined for an unknown route. Every route gets here only after initData was verified.
-function route(path: string, userId: number): unknown {
+const diaryRows = (journal: JournalStore) =>
+  journal.all("SELECT id, entry_date, body FROM journal_entries") as DiaryRow[];
+const ideaRows = (journal: JournalStore) =>
+  journal.all("SELECT id, idea_date, idea_time, body FROM ideas") as IdeaRow[];
+
+// Returns undefined for an unknown route and null when the data behind it is not open. Every route gets here
+// only after initData was verified.
+function route(url: URL, userId: number, journal: JournalStore | undefined): unknown {
+  const path = url.pathname;
   if (path === "/api/me") return { userId };
-  return undefined;
+  const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
+  if (path !== "/api/diary" && path !== "/api/ideas" && !diary) return undefined;
+  if (!journal) return null;
+  const q = url.searchParams.get("q") ?? undefined;
+  if (path === "/api/diary") return diaryList(diaryRows(journal), q);
+  if (diary) return diaryEntry(diaryRows(journal), Number(diary[1])) ?? undefined;
+  return ideaList(ideaRows(journal), q);
 }
 
-async function api(req: IncomingMessage, res: ServerResponse, path: string, options: MiniAppOptions) {
+async function api(req: IncomingMessage, res: ServerResponse, url: URL, options: MiniAppOptions) {
   const header = req.headers.authorization ?? "";
   const checked = header.startsWith("tma ")
     ? checkInitData(header.slice(4), options.token, options.owner, options.now?.())
     : ({ ok: false } as const);
   // One answer for every refusal, so nothing reveals which check failed.
   if (!checked.ok) return json(res, 401, { error: "unauthorized" });
-  const body = route(path, checked.userId);
-  return body === undefined ? json(res, 404, { error: "not_found" }) : json(res, 200, body);
+  const body = route(url, checked.userId, options.journal);
+  if (body === undefined) return json(res, 404, { error: "not_found" });
+  if (body === null) return json(res, 503, { error: "unavailable" });
+  return json(res, 200, body);
 }
 
 async function file(root: string, path: string) {
@@ -102,8 +121,9 @@ export function createMiniAppServer(options: MiniAppOptions): Server {
     try {
       if (req.method !== "GET" && req.method !== "HEAD")
         return send(res, 405, "Method not allowed", { allow: "GET, HEAD" });
-      const path = new URL(req.url ?? "/", "http://localhost").pathname;
-      if (path === "/api" || path.startsWith("/api/")) return await api(req, res, path, options);
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const path = url.pathname;
+      if (path === "/api" || path.startsWith("/api/")) return await api(req, res, url, options);
       await assets(req, res, path, root);
     } catch {
       if (!res.headersSent) send(res, 500, "Server error", { "content-type": "text/plain; charset=utf-8" });

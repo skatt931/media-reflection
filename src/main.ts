@@ -131,7 +131,7 @@ const send: Send = async (text, keyboard, out = {}) => {
 async function openMiniApp() {
   try {
     const port = miniAppPort(process.env.MINIAPP_PORT);
-    if (port) miniApp = await startMiniApp({ token: token!, owner }, port);
+    if (port) miniApp = await startMiniApp({ token: token!, owner, journal }, port);
   } catch (e) {
     console.error(e instanceof Error ? e.message : "Mini App не запущено.");
   }
@@ -155,8 +155,8 @@ try {
   store = new Store(process.env.DB_PATH ?? "./data/media.sqlite");
   store.prune();
   await api("setMyCommands", { commands }).catch(() => console.error("Не вдалося оновити меню команд."));
-  await openMiniApp();
   journal = new JournalStore(process.env.JOURNAL_DB_PATH ?? "./data/journal.sqlite");
+  await openMiniApp();
   const runtime = createRuntime(store);
   const services = { ...runtime.services, journal };
   console.log(`Бот @${me.username} запущено. Ctrl+C — зупинити.`);

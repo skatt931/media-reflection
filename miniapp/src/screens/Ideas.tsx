@@ -1,16 +1,39 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IdeaItem, IdeaList } from "../../../src/miniapp/data.ts";
 import { send } from "../api.ts";
 import { dayHeading, ideasLabel, shortDate } from "../format.ts";
 import { useAction, useResource, useScrollMemory } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
-import { Bars, Empty, Failed, Marked, Problem } from "../parts.tsx";
+import { Bars, Empty, Failed, Marked, Problem, UndoBar } from "../parts.tsx";
 import { searchHash } from "../router.ts";
 import { TextSheet } from "./TextSheet.tsx";
 
 export const IDEA_LIMIT = 4_000;
 
-type Toggle = { resolved: boolean; busy: boolean; onClick: () => void };
+// `pending` is the one whose request is in flight: its button shows the work instead of the icon.
+type Toggle = { resolved: boolean; busy: boolean; pending: boolean; onClick: () => void };
+const SLIDE_MS = 220;
+const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+// A row (or a whole day) folds away to nothing, or unfolds when it arrives, instead of making the rest jump.
+function Fold({ shut, appear = false, children }: { shut: boolean; appear?: boolean; children: ReactNode }) {
+  const [closed, setClosed] = useState(appear);
+  useEffect(() => {
+    if (!appear) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => (second = requestAnimationFrame(() => setClosed(false))));
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [appear]);
+  return (
+    <div className={shut || closed ? "fold shut" : "fold"}>
+      <div>{children}</div>
+    </div>
+  );
+}
 // A resolved idea can also be deleted, after one more tap that asks again.
 type Remove = { asking: boolean; busy: boolean; ask: () => void; cancel: () => void; confirm: () => void };
 
@@ -39,10 +62,15 @@ export function Idea({
         <button
           className="idea-act"
           disabled={toggle.busy}
+          aria-busy={toggle.pending || undefined}
           aria-label={toggle.resolved ? "Повернути до ідей" : "Позначити вирішеною"}
           onClick={toggle.onClick}
         >
-          <Icon name={toggle.resolved ? "undo" : "check"} size={22} />
+          {toggle.pending ? (
+            <span className="spin" />
+          ) : (
+            <Icon name={toggle.resolved ? "undo" : "check"} size={22} />
+          )}
         </button>
       )}
       {remove && (
@@ -75,6 +103,10 @@ export function Ideas() {
   const [adding, setAdding] = useState(false);
   const action = useAction();
   const [asking, setAsking] = useState<number | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState<number | null>(null);
+  const [restored, setRestored] = useState<number | null>(null);
+  const [undo, setUndo] = useState<IdeaItem | null>(null);
   useScrollMemory(list.status === "ok");
   const ideas = list.data?.ideas;
   const resolved = list.data?.resolved ?? [];
@@ -87,11 +119,37 @@ export function Ideas() {
     return out;
   }, [ideas]);
 
-  const move = (idea: IdeaItem, resolve: boolean) =>
-    action.run(async () => {
+  const latest = useRef(list.data);
+  latest.current = list.data;
+  // The row folds away only once the server has taken the change; then the list is updated by hand (the answer
+  // of a reload would arrive a moment later) and checked against the server in the background.
+  const move = async (idea: IdeaItem, resolve: boolean) => {
+    if (leaving === idea.id || pending !== null) return;
+    setPending(idea.id);
+    setUndo(null);
+    const sent = await action.run(async () => {
       await send("POST", `/api/ideas/${idea.id}/${resolve ? "resolve" : "restore"}`);
-      list.reload();
+      return true;
     });
+    if (!sent) return setPending(null);
+    if (resolve) {
+      setLeaving(idea.id);
+      if (!reduced()) await wait(SLIDE_MS);
+    } else setRestored(idea.id);
+    const data = latest.current;
+    if (data) {
+      const others = (rows: IdeaItem[]) => rows.filter((row) => row.id !== idea.id);
+      list.set({
+        ...data,
+        ideas: resolve ? others(data.ideas) : [idea, ...others(data.ideas)].sort((a, b) => b.id - a.id),
+        resolved: resolve ? [idea, ...others(data.resolved)] : others(data.resolved),
+      });
+    }
+    setLeaving(null);
+    setPending(null);
+    if (resolve) setUndo(idea);
+    list.reload();
+  };
   const remove = (idea: IdeaItem): Remove => ({
     asking: asking === idea.id,
     busy: action.busy,
@@ -106,7 +164,8 @@ export function Ideas() {
   });
   const toggle = (idea: IdeaItem, resolvedNow: boolean): Toggle => ({
     resolved: resolvedNow,
-    busy: action.busy,
+    busy: action.busy || pending !== null,
+    pending: pending === idea.id,
     onClick: () => move(idea, !resolvedNow),
   });
   const total = (ideas?.length ?? 0) + resolved.length;
@@ -131,12 +190,20 @@ export function Ideas() {
         <>
           {days.length ? (
             days.map(({ date, items }) => (
-              <section key={date}>
-                <h2 className="grp">{dayHeading(date)}</h2>
-                {items.map((idea) => (
-                  <Idea key={idea.id} idea={idea} toggle={toggle(idea, false)} />
-                ))}
-              </section>
+              <Fold
+                key={date}
+                shut={items.every((idea) => idea.id === leaving)}
+                appear={items.every((idea) => idea.id === restored)}
+              >
+                <section>
+                  <h2 className="grp">{dayHeading(date)}</h2>
+                  {items.map((idea) => (
+                    <Fold key={idea.id} shut={idea.id === leaving} appear={idea.id === restored}>
+                      <Idea idea={idea} toggle={toggle(idea, false)} />
+                    </Fold>
+                  ))}
+                </section>
+              </Fold>
             ))
           ) : (
             <Empty>
@@ -168,6 +235,18 @@ export function Ideas() {
         <Failed what="ідеї" retry={list.reload} />
       ) : (
         <Bars className="rows" rows={[85, 60, 90, 70]} />
+      )}
+      {undo && (
+        <UndoBar
+          key={undo.id}
+          text="Ідею перенесено у вирішені"
+          undo="Повернути"
+          onUndo={() => {
+            setUndo(null);
+            move(undo, false);
+          }}
+          onDone={() => setUndo(null)}
+        />
       )}
       {adding && (
         <TextSheet

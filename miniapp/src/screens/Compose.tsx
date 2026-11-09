@@ -4,7 +4,7 @@ import { today } from "../format.ts";
 import { useAction, useBack, useDraft } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { BackBar, Problem } from "../parts.tsx";
-import { entryHash, goBack, sectionHash } from "../router.ts";
+import { entryHash, goBack, replaceHash, sectionHash } from "../router.ts";
 import { confirmAction, guardClosing } from "../telegram.ts";
 
 export const DIARY_LIMIT = 100_000;
@@ -28,7 +28,7 @@ export function Compose() {
     return () => guardClosing(false);
   }, [dirty]);
   useEffect(() => {
-    field.current?.focus();
+    field.current?.focus({ preventScroll: true });
   }, []);
   // The field grows with the text, so the page scrolls instead of the field.
   useLayoutEffect(() => {
@@ -44,7 +44,7 @@ export function Compose() {
     clearBody();
     guardClosing(false);
     // The entry replaces the form in the history, so "back" returns to the list, not to an empty form.
-    location.replace(entryHash(saved.id));
+    replaceHash(entryHash(saved.id));
   };
 
   return (

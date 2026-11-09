@@ -13,9 +13,9 @@ import { Media } from "./screens/Media.tsx";
 import { Search } from "./screens/Search.tsx";
 
 const sections: { id: Section; icon: IconName; title: string }[] = [
-  { id: "diary", icon: "diary", title: "Щоденник" },
-  { id: "media", icon: "library", title: "Медіатека" },
   { id: "ideas", icon: "ideas", title: "Ідеї" },
+  { id: "media", icon: "library", title: "Медіатека" },
+  { id: "diary", icon: "diary", title: "Щоденник" },
 ];
 
 type Access = "checking" | "ok" | "outside" | "denied" | "failed";

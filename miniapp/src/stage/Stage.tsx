@@ -8,7 +8,17 @@ import {
   type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
-import { ORDER, depth, goBack, hashOf, scrollKey, sectionHash, type Route, type Section } from "../router.ts";
+import {
+  ORDER,
+  before,
+  depth,
+  goBack,
+  hashOf,
+  scrollKey,
+  sectionHash,
+  type Route,
+  type Section,
+} from "../router.ts";
 import {
   DIM,
   PEEK,
@@ -42,6 +52,16 @@ function kindOf(from: Route, to: Route): Kind | null {
   if (from.screen === "list" && to.screen === "list") return from.section === to.section ? null : "tab";
   const by = depth(to) - depth(from);
   return by > 0 ? "push" : by < 0 ? "pop" : null;
+}
+
+// A swipe closes a material (back to the media list) and a diary entry (back to wherever it was opened from:
+// the list, a search, the entry before it).
+const closable = (route: Route) => route.screen === "material" || route.screen === "entry";
+const homeOf = (route: Route) => sectionHash(route.section);
+function underOf(route: Route): Route {
+  if (route.screen !== "entry") return list(route.section);
+  const prev = before();
+  return prev && prev.section === "diary" && prev.screen !== "compose" ? prev : list("diary");
 }
 
 // Touches that start here belong to the thing touched, not to the swipe.
@@ -268,12 +288,12 @@ export function Stage({
         flushSync(() => setPanes([cur, d.neighbor!]));
       }
     } else {
-      if (dx < 0 || cur.route.screen !== "material") return false;
-      d.under = { id: ++ids.current, route: list("media") };
+      if (dx < 0 || !closable(cur.route)) return false;
+      d.under = { id: ++ids.current, route: underOf(cur.route) };
       flushSync(() => setPanes([d.under!, cur]));
-      d.card = cardOf(d.under, cur.route.id);
+      d.card = cur.route.screen === "material" ? cardOf(d.under, cur.route.id) : null;
       if (!d.card) el(cur).classList.add("lifted");
-      reveal.current(true);
+      if (d.under.route.screen === "list") reveal.current(true);
     }
     moving(true);
     return true;
@@ -331,7 +351,7 @@ export function Stage({
       r.dim(veil.current, d.veil, 0, time);
       current.current = under;
       shown.current = hashOf(under.route);
-      goBack(sectionHash("media"));
+      goBack(homeOf(cur.route));
       end(r, [under], () => reveal.current(false));
     } else {
       r.tween(topEl, d.top, REST, time);
@@ -350,7 +370,7 @@ export function Stage({
       if (e.pointerType === "mouse" || !e.isPrimary || run.current || drag.current) return;
       if ((e.target as Element).closest(OWN) || document.querySelector(".sheet")) return;
       const screen = current.current.route.screen;
-      const kind = screen === "list" ? "tab" : screen === "material" ? "back" : null;
+      const kind = screen === "list" ? "tab" : closable(current.current.route) ? "back" : null;
       if (!kind) return;
       drag.current = {
         pointer: e.pointerId,

@@ -17,11 +17,11 @@ export function Search({ section, initial }: { section: "diary" | "ideas"; initi
   const leave = () => goBack(sectionHash(section));
   useBack(true, leave);
   useEffect(() => {
-    field.current?.focus();
+    field.current?.focus({ preventScroll: true });
   }, []);
   // The query stays in the address, so coming back from an entry finds the same results.
   useEffect(() => {
-    history.replaceState(null, "", searchHash(section, q));
+    history.replaceState(history.state, "", searchHash(section, q));
   }, [section, q]);
 
   const terms = result.data?.terms ?? [];

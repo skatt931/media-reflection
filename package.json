@@ -24,6 +24,8 @@
     "journal:import": "node --env-file-if-exists=.env scripts/import-journal.ts import",
     "journal:verify": "node --env-file-if-exists=.env scripts/import-journal.ts verify",
     "journal:manifest": "node --env-file-if-exists=.env scripts/import-journal.ts manifest",
+    "journal:export": "node --env-file-if-exists=.env scripts/journal-export.ts",
+    "journal:pull": "node --env-file-if-exists=.env scripts/journal-pull.mjs",
     "format": "prettier --write src scripts tests",
     "miniapp:probe": "node --env-file-if-exists=.env scripts/miniapp-probe.mjs"
   },

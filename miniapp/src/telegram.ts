@@ -8,6 +8,9 @@ type WebApp = {
   expand(): void;
   disableVerticalSwipes?(): void;
   openLink?(url: string): void;
+  showConfirm?(message: string, callback: (ok: boolean) => void): void;
+  enableClosingConfirmation?(): void;
+  disableClosingConfirmation?(): void;
   isVersionAtLeast?(version: string): boolean;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
@@ -82,4 +85,18 @@ export function onThemeChanged(callback: () => void) {
 export function openLink(url: string) {
   if (webApp?.openLink) webApp.openLink(url);
   else window.open(url, "_blank", "noopener");
+}
+
+// Telegram's own dialog where it has one (Bot API 6.2); a plain browser asks with its own.
+export function confirmAction(message: string): Promise<boolean> {
+  if (webApp?.showConfirm && supports("6.2"))
+    return new Promise((done) => webApp.showConfirm!(message, done));
+  return Promise.resolve(window.confirm(message));
+}
+
+// While text is not saved, closing the Mini App asks first.
+export function guardClosing(on: boolean) {
+  if (!supports("6.2")) return;
+  if (on) webApp?.enableClosingConfirmation?.();
+  else webApp?.disableClosingConfirmation?.();
 }

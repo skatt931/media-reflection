@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { useBack } from "./hooks.ts";
 import { nativeBack } from "./telegram.ts";
 import { Icon } from "./icons.tsx";
 
@@ -45,4 +46,57 @@ export function Marked({ text, terms }: { text: string; terms: string[] }) {
   const any = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/'/g, "['’ʼ`]")).join("|");
   const pattern = new RegExp(`((?:${any})${letters})`, "giu");
   return <>{text.split(pattern).map((piece, i) => (i % 2 ? <mark key={i}>{piece}</mark> : piece))}</>;
+}
+
+// A bottom sheet over the screen: Telegram's back button, Escape and a tap outside close it.
+export function Sheet({
+  title,
+  onClose,
+  className = "",
+  focus = true,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  className?: string;
+  // Off when a field inside takes the focus itself.
+  focus?: boolean;
+  children: ReactNode;
+}) {
+  useBack(true, onClose);
+  const sheet = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus) sheet.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focus, onClose]);
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div
+        className={`sheet fsheet ${className}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        ref={sheet}
+      >
+        <div className="grab" aria-hidden="true" />
+        <div className="sheet-top">
+          <h2>{title}</h2>
+        </div>
+        {children}
+      </div>
+    </>
+  );
+}
+
+// Said where a write failed; the text typed so far is still there.
+export function Problem({ children }: { children: ReactNode }) {
+  return (
+    <p className="problem" role="alert">
+      {children}
+    </p>
+  );
 }

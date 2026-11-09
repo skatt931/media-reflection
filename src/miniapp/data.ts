@@ -3,7 +3,13 @@ import { fold, matches, stems } from "../words.ts";
 // What the Mini App shows of the diary and the ideas. Plain functions over plain rows, so the same code
 // answers the server and the browser mock (`npm run miniapp:dev` with ?mock).
 export type DiaryRow = { id: number; entry_date: string; body: string };
-export type IdeaRow = { id: number; idea_date: string; idea_time: string; body: string };
+export type IdeaRow = {
+  id: number;
+  idea_date: string;
+  idea_time: string;
+  body: string;
+  resolved_at?: string | null;
+};
 
 export type DiaryItem = { id: number; date: string; excerpt: string; words: number };
 export type DiaryList = { entries: DiaryItem[]; terms: string[] };
@@ -16,7 +22,8 @@ export type DiaryEntry = {
   newer: { id: number; date: string } | null;
 };
 export type IdeaItem = { id: number; date: string; time: string; body: string };
-export type IdeaList = { ideas: IdeaItem[]; terms: string[] };
+// `ideas` are the open ones; `resolved` (the most recently resolved first) can be brought back.
+export type IdeaList = { ideas: IdeaItem[]; resolved: IdeaItem[]; terms: string[] };
 
 export const MAX_QUERY = 200;
 const EXCERPT = 240;
@@ -94,10 +101,18 @@ export function diaryEntry(rows: DiaryRow[], id: number): DiaryEntry | null {
 
 export function ideaList(rows: IdeaRow[], q?: string): IdeaList {
   const text = query(q);
-  const sorted = [...rows].sort((a, b) => b.id - a.id);
-  const found = text ? sorted.filter((row) => matches(fold(row.body), text)) : sorted;
-  return {
-    terms: text ? stems(text) : [],
-    ideas: found.map((row) => ({ id: row.id, date: row.idea_date, time: row.idea_time, body: row.body })),
-  };
+  const found = text ? rows.filter((row) => matches(fold(row.body), text)) : rows;
+  const item = (row: IdeaRow): IdeaItem => ({
+    id: row.id,
+    date: row.idea_date,
+    time: row.idea_time,
+    body: row.body,
+  });
+  const open = found.filter((row) => !row.resolved_at).sort((a, b) => b.id - a.id);
+  const resolved = found
+    .filter((row) => row.resolved_at)
+    .sort((a, b) =>
+      b.resolved_at! < a.resolved_at! ? -1 : b.resolved_at! > a.resolved_at! ? 1 : b.id - a.id,
+    );
+  return { terms: text ? stems(text) : [], ideas: open.map(item), resolved: resolved.map(item) };
 }

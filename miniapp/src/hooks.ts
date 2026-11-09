@@ -7,7 +7,9 @@ type Resource<T> = { status: "loading" | "ok" | "error"; data?: T; error?: unkno
 // Answers already seen stay on screen while a fresh one loads, so going back to a list is instant.
 const seen = new Map<string, unknown>();
 
-export function useResource<T>(path: string | null): Resource<T> & { reload: () => void } {
+export function useResource<T>(
+  path: string | null,
+): Resource<T> & { reload: () => void; set: (data: T) => void } {
   const [state, setState] = useState<Resource<T>>(() =>
     path && seen.has(path) ? { status: "ok", data: seen.get(path) as T } : { status: "loading" },
   );
@@ -28,7 +30,63 @@ export function useResource<T>(path: string | null): Resource<T> & { reload: () 
     };
   }, [path, attempt]);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
-  return { ...state, reload };
+  // The answer to a write replaces what was shown, here and in the cache.
+  const set = useCallback(
+    (data: T) => {
+      if (path) seen.set(path, data);
+      setState({ status: "ok", data });
+    },
+    [path],
+  );
+  return { ...state, reload, set };
+}
+
+// A write in flight: one at a time, and a failure is shown where it happened instead of being lost.
+export function useAction() {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const working = useRef(false);
+  const run = useCallback(async <T>(action: () => Promise<T>): Promise<T | undefined> => {
+    if (working.current) return undefined;
+    working.current = true;
+    setBusy(true);
+    setFailed(false);
+    try {
+      return await action();
+    } catch {
+      setFailed(true);
+      return undefined;
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  }, []);
+  return { busy, failed, run };
+}
+
+// Unsaved text survives a closed sheet, a swiped-away app or a restart; it is cleared only by saving.
+export function useDraft(key: string): [string, (text: string) => void, () => void] {
+  const [text, setText] = useState(() => {
+    try {
+      return localStorage.getItem(key) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const update = useCallback(
+    (next: string) => {
+      setText(next);
+      try {
+        if (next) localStorage.setItem(key, next);
+        else localStorage.removeItem(key);
+      } catch {
+        // No storage: the text still lives on the screen.
+      }
+    },
+    [key],
+  );
+  const clear = useCallback(() => update(""), [update]);
+  return [text, update, clear];
 }
 
 export function useDebounced<T>(value: T, ms: number) {

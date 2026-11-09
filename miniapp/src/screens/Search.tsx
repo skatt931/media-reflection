@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DiaryList, IdeaList } from "../../../src/miniapp/data.ts";
-import { dayHeading, ideasLabel, records } from "../format.ts";
+import { dayHeading, ideasLabel, records, shortDate } from "../format.ts";
 import { useBack, useDebounced, useResource } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { Bars, Failed } from "../parts.tsx";
@@ -25,7 +25,10 @@ export function Search({ section, initial }: { section: "diary" | "ideas"; initi
   }, [section, q]);
 
   const terms = result.data?.terms ?? [];
-  const found = section === "diary" ? result.data?.entries : result.data?.ideas;
+  const found =
+    section === "diary"
+      ? result.data?.entries
+      : result.data && [...result.data.ideas, ...result.data.resolved];
   const pending = !!q && result.status === "loading";
 
   return (
@@ -74,6 +77,14 @@ export function Search({ section, initial }: { section: "diary" | "ideas"; initi
                   <Idea idea={idea} terms={terms} />
                 </div>
               ))}
+          {section === "ideas" && !!result.data?.resolved.length && (
+            <>
+              <h2 className="grp">Вирішені</h2>
+              {result.data.resolved.map((idea) => (
+                <Idea key={idea.id} idea={idea} stamp={shortDate(idea.date)} terms={terms} />
+              ))}
+            </>
+          )}
         </div>
       ) : pending ? (
         <Bars className="rows" rows={[90, 70, 85]} />

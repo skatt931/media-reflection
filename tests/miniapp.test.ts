@@ -142,11 +142,20 @@ test("API: the owner gets data, unknown routes are 404", async () => {
   assert.equal((await fetch(`${base}/api/nothing`, { headers })).status, 404);
 });
 
-test("only GET and HEAD are allowed", async () => {
-  for (const path of ["/", "/api/me"]) {
-    const response = await fetch(`${base}${path}`, { method: "POST", headers: auth(sign(fields())) });
-    assert.equal(response.status, 405);
+test("the app's files and /api/me take only reads; the rest of the API takes POST and PATCH", async () => {
+  const headers = auth(sign(fields()));
+  for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
+    assert.equal((await fetch(`${base}/`, { method, headers })).status, 405);
+    assert.equal((await fetch(`${base}/assets/app.js`, { method, headers })).status, 405);
   }
+  for (const method of ["POST", "PATCH"])
+    assert.equal((await fetch(`${base}/api/me`, { method, headers })).status, 405);
+  // PUT and DELETE are never part of the API.
+  for (const method of ["PUT", "DELETE"])
+    assert.equal((await fetch(`${base}/api/me`, { method, headers })).status, 405);
+  // A write without credentials is refused like a read.
+  const anonymous = await fetch(`${base}/api/diary`, { method: "POST", body: "{}" });
+  assert.equal(anonymous.status, 401);
 });
 
 test("static files: index, assets, app screens fall back to index.html", async () => {
@@ -244,6 +253,7 @@ test("API: diary and ideas from the journal, only for the owner", async () => {
 
     const ideas = await get("/api/ideas");
     assert.deepEqual(ideas.body.ideas, [{ id: 1, date: "2026-11-07", time: "09:30", body: "Купити змазку" }]);
+    assert.deepEqual(ideas.body.resolved, []);
     assert.equal((await get(`/api/ideas?q=${encodeURIComponent("змазки")}`)).body.ideas.length, 1);
     assert.equal((await get("/api/ideas?q=nothing")).body.ideas.length, 0);
   } finally {

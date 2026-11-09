@@ -99,11 +99,13 @@ const ideas: IdeaRow[] = [
   [4, "18:44", "Спробувати записати підсумок тижня голосовим замість тексту."],
   [5, "12:10", "Маршрут уздовж каналу до мосту. Взяти термос."],
   [7, "21:03", "Одного вечора нічого не планувати й не брати телефон."],
-].map(([ago, time, body], i) => ({
+  [12, "19:20", "Зробити полицю для книжок над столом."],
+].map(([ago, time, body], i): IdeaRow => ({
   id: 100 - i,
   idea_date: daysAgo(ago as number),
   idea_time: time as string,
   body: body as string,
+  resolved_at: i === 8 ? new Date().toISOString() : null,
 }));
 
 const labels = {
@@ -264,4 +266,43 @@ export async function mockGet<T>(path: string): Promise<T> {
     body = library.find((m) => m.id === decodeURIComponent(url.pathname.slice(13)));
   if (!body) throw new ApiError(404);
   return body as T;
+}
+
+// Writes change the invented data in memory, so a reload starts over. ?mock=fail makes every write fail.
+export async function mockSend<T>(method: string, path: string, body: unknown): Promise<T> {
+  await wait(mode === "slow" ? 2500 : 300);
+  if (mode === "fail") throw new ApiError(503);
+  const input = (body ?? {}) as Record<string, any>;
+  const url = new URL(path, location.origin);
+  const now = new Date();
+  if (url.pathname === "/api/diary") {
+    const id = Math.max(0, ...diary.map((d) => d.id)) + 1;
+    diary.push({ id, entry_date: input.date, body: input.body.trim() });
+    return { id } as T;
+  }
+  if (url.pathname === "/api/ideas") {
+    const id = Math.max(0, ...ideas.map((d) => d.id)) + 1;
+    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    ideas.push({ id, idea_date: isoDate(now), idea_time: time, body: input.body.trim(), resolved_at: null });
+    return { id } as T;
+  }
+  const idea = /^\/api\/ideas\/(\d+)\/(resolve|restore)$/.exec(url.pathname);
+  if (idea) {
+    const row = ideas.find((i) => i.id === Number(idea[1]));
+    if (!row) throw new ApiError(404);
+    row.resolved_at = idea[2] === "resolve" ? now.toISOString() : null;
+    return true as T;
+  }
+  const item = /^\/api\/library\/([^/]+?)(\/impressions)?$/.exec(url.pathname);
+  const material = item && library.find((m) => m.id === decodeURIComponent(item[1]));
+  if (!material) throw new ApiError(404);
+  if (item[2]) {
+    material.impressions.push({ date: isoDate(now), body: input.body.trim() });
+    material.unreviewed = false;
+  } else {
+    for (const key of ["type", "status", "reaction", "tags"] as const)
+      if (key in input) (material as Record<string, unknown>)[key] = input[key];
+    if (input.reaction) material.unreviewed = false;
+  }
+  return structuredClone(material) as T;
 }

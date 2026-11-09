@@ -4,10 +4,11 @@ export type Section = "diary" | "media" | "ideas";
 export type Route =
   | { screen: "list"; section: Section }
   | { screen: "entry"; section: "diary"; id: number }
+  | { screen: "compose"; section: "diary" }
   | { screen: "material"; section: "media"; id: string }
   | { screen: "search"; section: "diary" | "ideas"; q: string };
 
-// #/diary, #/diary/42, #/diary/search?q=слово, #/ideas, #/ideas/search?q=слово, #/media, #/media/<id>
+// #/diary, #/diary/new, #/diary/42, #/diary/search?q=слово, #/ideas, #/ideas/search?q=слово, #/media, #/media/<id>
 export function parse(hash: string): Route {
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?");
   const [section, rest] = path.split("/");
@@ -23,6 +24,7 @@ export function parse(hash: string): Route {
   const known = section === "ideas" ? "ideas" : "diary";
   if (rest === "search")
     return { screen: "search", section: known, q: new URLSearchParams(query).get("q") ?? "" };
+  if (known === "diary" && rest === "new") return { screen: "compose", section: "diary" };
   if (known === "diary" && /^\d+$/.test(rest ?? ""))
     return { screen: "entry", section: "diary", id: Number(rest) };
   return { screen: "list", section: known };
@@ -30,6 +32,7 @@ export function parse(hash: string): Route {
 
 export const searchHash = (section: "diary" | "ideas", q = "") =>
   `#/${section}/search${q ? `?q=${encodeURIComponent(q)}` : ""}`;
+export const composeHash = "#/diary/new";
 export const entryHash = (id: number) => `#/diary/${id}`;
 export const materialHash = (id: string) => `#/media/${encodeURIComponent(id)}`;
 export const sectionHash = (section: Section) => `#/${section}`;

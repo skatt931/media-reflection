@@ -182,44 +182,83 @@ test("a single idea has no arrows, a voice idea is marked, an empty list says so
   assert.match(sent.at(-1)!.text, /^Ідеї · 1\/1\n\d\d\.\d\d\.\d\d \d\d:\d\d 🎤\n\nГолосом$/);
   assert.deepEqual(
     buttons(sent.at(-1)!).map((b: string) => b.split(":").slice(0, 2).join(":")),
-    ["idea:del"],
+    ["idea:done"],
   );
 });
 
-test("deleting an idea needs a confirmation and then shows the next older one", async () => {
+test("an idea is resolved with one tap, not deleted, and the next older one is shown", async () => {
   const { journal, sent, say, tap, buttons } = setup();
   await say("/idea Стара");
   await say("/idea Нова");
   await say("/ideas");
   const card = sent.at(-1)!;
-  const del = buttons(card).find((b: string) => b.startsWith("idea:del:"))!;
-  await tap(del, card.id);
-  assert.match(sent.at(-1)!.text, /^Видалити ідею\?[\s\S]*Нова/);
-  assert.equal(journal.ideaCount(), 2);
-  const keep = buttons(sent.at(-1)!).find((b: string) => b.startsWith("idea:open:"))!;
-  await tap(keep, card.id);
-  assert.equal(journal.ideaCount(), 2);
-  assert.match(sent.at(-1)!.text, /Нова/);
-
-  await tap(del, card.id);
-  const notice = await tap(buttons(sent.at(-1)!)[0], card.id);
-  assert.equal(notice, "Видалено");
-  assert.equal(journal.ideaCount(), 1);
+  // No delete anywhere on the card.
+  assert.ok(buttons(card).every((b: string) => !/del|rm/.test(b)));
+  const notice = await tap(
+    buttons(card).find((b: string) => b.startsWith("idea:done:"))!,
+    card.id,
+  );
+  assert.equal(notice, "Вирішено");
+  assert.equal(journal.all("SELECT count(*) AS n FROM ideas")[0].n, 2);
   assert.match(sent.at(-1)!.text, /^Ідеї · 1\/1[\s\S]*Стара$/);
+  assert.ok(buttons(sent.at(-1)!).includes("idea:list:resolved"));
+  assert.match(sent.at(-1)!.keyboard.inline_keyboard.flat().at(-1).text, /^Вирішені \(1\)$/);
 
-  await tap(buttons(sent.at(-1)!)[0], card.id);
-  await tap(buttons(sent.at(-1)!)[0], card.id);
-  assert.equal(journal.ideaCount(), 0);
-  assert.match(sent.at(-1)!.text, /Ідей поки немає/);
+  // The last open idea resolved: the list says so and still offers the resolved ones.
+  await tap(
+    buttons(sent.at(-1)!).find((b: string) => b.startsWith("idea:done:"))!,
+    card.id,
+  );
+  assert.equal(sent.at(-1)!.text, "Усі ідеї вирішені.");
+  assert.deepEqual(buttons(sent.at(-1)!), ["idea:list:resolved"]);
+  await say("/ideas");
+  assert.equal(sent.at(-1)!.text, "Усі ідеї вирішені.");
 });
 
-test("a stale button for a deleted idea does not crash", async () => {
+test("resolved ideas are listed apart, the most recently resolved first, and can be brought back", async () => {
+  const { journal, sent, say, tap, buttons } = setup();
+  await say("/idea Перша");
+  await say("/idea Друга");
+  await say("/idea Третя");
+  const [first, second, third] = journal.ideaIds().reverse();
+  journal.setIdeaResolved(first, new Date("2026-11-01T10:00:00Z"));
+  journal.setIdeaResolved(second, new Date("2026-11-05T10:00:00Z"));
+  await say("/ideas");
+  const open = sent.at(-1)!;
+  assert.match(open.text, /^Ідеї · 1\/1[\s\S]*Третя$/);
+  await tap("idea:list:resolved", open.id);
+  assert.match(sent.at(-1)!.text, /^Вирішені · 1\/2[\s\S]*Друга$/);
+  const arrows = buttons(sent.at(-1)!);
+  await tap(arrows[1], open.id);
+  assert.match(sent.at(-1)!.text, /^Вирішені · 2\/2[\s\S]*Перша$/);
+  await tap(buttons(sent.at(-1)!)[1], open.id);
+  assert.match(sent.at(-1)!.text, /^Вирішені · 1\/2[\s\S]*Друга$/);
+
+  const undo = buttons(sent.at(-1)!).find((b: string) => b.startsWith("idea:undo:"))!;
+  const notice = await tap(undo, open.id);
+  assert.equal(notice, "Повернено");
+  assert.equal(journal.idea(second).resolved_at, null);
+  assert.match(sent.at(-1)!.text, /^Ідеї · \d\/2[\s\S]*Друга$/);
+
+  await tap("idea:list:open", open.id);
+  assert.match(sent.at(-1)!.text, /^Ідеї · 1\/2[\s\S]*Третя$/);
+  // From a resolved card there is a way back to the open list.
+  await tap(`idea:open:${first}`, open.id);
+  assert.ok(buttons(sent.at(-1)!).includes("idea:list:open"));
+});
+
+test("a stale button for a missing idea does not crash", async () => {
   const { sent, say, tap } = setup();
   await say("/idea Одна");
-  await tap("idea:rm:999", 7);
+  await tap("idea:done:999", 7);
+  assert.match(sent.at(-1)!.text, /вже немає/);
+  await tap("idea:undo:999", 7);
   assert.match(sent.at(-1)!.text, /вже немає/);
   await tap("idea:open:999", 7);
   assert.match(sent.at(-1)!.text, /Одна/);
+  // The old «Видалити» buttons of earlier messages are gone from the code: they do nothing and delete nothing.
+  await tap("idea:rm:1", 7);
+  await tap("idea:del:1", 7);
 });
 
 test("without the journal database /idea and /ideas say so and save nothing", async () => {

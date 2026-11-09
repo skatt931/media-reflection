@@ -213,21 +213,14 @@ export class JournalStore {
   ideaCount() {
     return Number(this.all("SELECT count(*) AS n FROM ideas")[0].n);
   }
-  // The list runs from the newest idea to the oldest; "next" is one step older, both ends wrap around.
-  newestIdea() {
-    return this.all("SELECT * FROM ideas ORDER BY id DESC LIMIT 1")[0];
-  }
-  ideaStep(id: number, direction: "newer" | "older") {
-    const [cmp, order] = direction === "older" ? ["<", "DESC"] : [">", "ASC"];
-    // Past the oldest idea comes the newest, past the newest the oldest: the same order without the bound.
-    return (
-      this.all(`SELECT * FROM ideas WHERE id${cmp}? ORDER BY id ${order} LIMIT 1`, id)[0] ??
-      this.all(`SELECT * FROM ideas ORDER BY id ${order} LIMIT 1`)[0]
-    );
-  }
-  // 1 for the newest idea.
-  ideaPosition(id: number) {
-    return Number(this.all("SELECT count(*) AS n FROM ideas WHERE id>=?", id)[0].n);
+  // The ideas of one list in the order they are shown: open ones from the newest, resolved ones from the
+  // most recently resolved. The bot pages through this list, the arrows wrap around its ends.
+  ideaIds(resolved = false): number[] {
+    return this.all(
+      resolved
+        ? "SELECT id FROM ideas WHERE resolved_at IS NOT NULL ORDER BY resolved_at DESC, id DESC"
+        : "SELECT id FROM ideas WHERE resolved_at IS NULL ORDER BY id DESC",
+    ).map((row) => row.id as number);
   }
   // Resolved ideas stay in the table (and in the Obsidian export); null brings one back.
   setIdeaResolved(id: number, at: Date | null) {

@@ -248,7 +248,7 @@ test("resolved ideas are listed apart, the most recently resolved first, and can
 });
 
 test("a stale button for a missing idea does not crash", async () => {
-  const { sent, say, tap } = setup();
+  const { journal, sent, say, tap } = setup();
   await say("/idea Одна");
   await tap("idea:done:999", 7);
   assert.match(sent.at(-1)!.text, /вже немає/);
@@ -256,9 +256,47 @@ test("a stale button for a missing idea does not crash", async () => {
   assert.match(sent.at(-1)!.text, /вже немає/);
   await tap("idea:open:999", 7);
   assert.match(sent.at(-1)!.text, /Одна/);
-  // The old «Видалити» buttons of earlier messages are gone from the code: they do nothing and delete nothing.
+  // A live idea cannot be deleted, even by a stale or forged button.
   await tap("idea:rm:1", 7);
+  await tap("idea:rmyes:1", 7);
   await tap("idea:del:1", 7);
+  assert.equal(journal.ideaCount(), 1);
+});
+
+test("a resolved idea is deleted only after a confirmation; a live one never", async () => {
+  const { journal, sent, say, tap, buttons } = setup();
+  await say("/idea Випадкова");
+  await say("/idea Жива");
+  const [slip, live] = journal.ideaIds().reverse();
+  assert.equal(journal.deleteResolvedIdea(live), false);
+  journal.setIdeaResolved(slip, new Date("2026-11-05T10:00:00Z"));
+  await say("/ideas");
+  const open = sent.at(-1)!;
+  // The open card offers no delete; resolving comes first.
+  assert.ok(buttons(open).every((b: string) => !b.startsWith("idea:rm")));
+  await tap("idea:list:resolved", open.id);
+  assert.ok(buttons(sent.at(-1)!).includes(`idea:rm:${slip}`));
+
+  // «Видалити» only asks; nothing is lost yet, and «Ні» goes back to the card.
+  await tap(`idea:rm:${slip}`, open.id);
+  assert.match(sent.at(-1)!.text, /^Видалити назавжди\?[\s\S]*Випадкова$/);
+  assert.deepEqual(buttons(sent.at(-1)!), [`idea:rmyes:${slip}`, `idea:open:${slip}`]);
+  assert.equal(journal.ideaCount(), 2);
+  await tap(`idea:open:${slip}`, open.id);
+  assert.match(sent.at(-1)!.text, /^Вирішені · 1\/1[\s\S]*Випадкова$/);
+
+  await tap(`idea:rm:${slip}`, open.id);
+  const notice = await tap(`idea:rmyes:${slip}`, open.id);
+  assert.equal(notice, "Видалено");
+  assert.equal(journal.idea(slip), undefined);
+  assert.equal(journal.ideaCount(), 1);
+  // No resolved ideas are left, so the open list is shown.
+  assert.match(sent.at(-1)!.text, /Жива/);
+
+  // A second tap on the same confirmation finds nothing and does not crash.
+  await tap(`idea:rmyes:${slip}`, open.id);
+  assert.match(sent.at(-1)!.text, /вже немає/);
+  assert.equal(journal.ideaCount(), 1);
 });
 
 test("without the journal database /idea and /ideas say so and save nothing", async () => {

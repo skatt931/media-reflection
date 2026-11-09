@@ -3,10 +3,22 @@ import { NO_REACTION, type Labels } from "../../../src/miniapp/library-types.ts"
 import { useBack } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 
-export type Filters = { types: string[]; statuses: string[]; reactions: string[]; unreviewed: boolean };
-export const noFilters: Filters = { types: [], statuses: [], reactions: [], unreviewed: false };
+export type Filters = {
+  types: string[];
+  statuses: string[];
+  reactions: string[];
+  unreviewed: boolean;
+  noThought: boolean;
+};
+export const noFilters: Filters = {
+  types: [],
+  statuses: [],
+  reactions: [],
+  unreviewed: false,
+  noThought: false,
+};
 export const isFiltered = (f: Filters) =>
-  f.types.length > 0 || f.statuses.length > 0 || f.reactions.length > 0 || f.unreviewed;
+  f.types.length > 0 || f.statuses.length > 0 || f.reactions.length > 0 || f.unreviewed || f.noThought;
 export const toggle = (list: string[], value: string) =>
   list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
@@ -87,6 +99,14 @@ export function FilterSheet({ filters, types, labels, shown, onChange, onClose }
                 {label}
               </Option>
             ))}
+          </Group>
+          <Group title="Думка">
+            <Option
+              on={filters.noThought}
+              onClick={() => onChange({ ...filters, noThought: !filters.noThought })}
+            >
+              Без думки
+            </Option>
           </Group>
           <Group title="Реакція">
             {Object.entries(labels.reactions).map(([reaction, label]) => (

@@ -56,7 +56,7 @@ const migrations = [
      created_at TEXT NOT NULL
    );
    CREATE UNIQUE INDEX ideas_export_name ON ideas(export_name) WHERE export_name IS NOT NULL;`,
-  // An idea is never deleted in the Mini App: it is marked as resolved and can be brought back.
+  // An idea is marked as resolved and can be brought back; only a resolved one can be deleted.
   `ALTER TABLE ideas ADD COLUMN resolved_at TEXT;`,
 ];
 export const journalSchemaVersion = migrations.length;
@@ -232,6 +232,11 @@ export class JournalStore {
   }
   removeIdea(id: number) {
     return Number(this.run("DELETE FROM ideas WHERE id=?", id).changes) > 0;
+  }
+  // The only way an idea leaves for good: it was resolved first, so one tap cannot delete a live idea.
+  // The note in Obsidian moves to `.deleted/` with the next export.
+  deleteResolvedIdea(id: number) {
+    return Number(this.run("DELETE FROM ideas WHERE id=? AND resolved_at IS NOT NULL", id).changes) > 0;
   }
   imported() {
     return this.all("SELECT * FROM journal_entries WHERE source='import' ORDER BY entry_date,source_name");

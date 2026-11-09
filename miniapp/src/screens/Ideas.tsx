@@ -11,6 +11,8 @@ import { TextSheet } from "./TextSheet.tsx";
 export const IDEA_LIMIT = 4_000;
 
 type Toggle = { resolved: boolean; busy: boolean; onClick: () => void };
+// A resolved idea can also be deleted, after one more tap that asks again.
+type Remove = { asking: boolean; busy: boolean; ask: () => void; cancel: () => void; confirm: () => void };
 
 // With `toggle` the idea carries its button: «вирішено» for an open one, «повернути» for a resolved one.
 // `stamp` replaces the time on the left (resolved ideas are not grouped by day).
@@ -19,14 +21,16 @@ export function Idea({
   terms = [],
   stamp,
   toggle,
+  remove,
 }: {
   idea: IdeaItem;
   terms?: string[];
   stamp?: string;
   toggle?: Toggle;
+  remove?: Remove;
 }) {
   return (
-    <div className={toggle ? "idea has-action" : "idea"}>
+    <div className={remove ? "idea has-action has-two" : toggle ? "idea has-action" : "idea"}>
       <time>{stamp ?? idea.time}</time>
       <p>
         <Marked text={idea.body} terms={terms} />
@@ -41,6 +45,27 @@ export function Idea({
           <Icon name={toggle.resolved ? "undo" : "check"} size={22} />
         </button>
       )}
+      {remove && (
+        <button
+          className="idea-act"
+          disabled={remove.busy}
+          aria-label="Видалити назавжди"
+          onClick={remove.ask}
+        >
+          <Icon name="trash" size={22} />
+        </button>
+      )}
+      {remove?.asking && (
+        <div className="idea-ask" role="alertdialog" aria-label="Видалити ідею назавжди?">
+          <span>Видалити назавжди?</span>
+          <button className="danger" disabled={remove.busy} onClick={remove.confirm}>
+            Видалити
+          </button>
+          <button disabled={remove.busy} onClick={remove.cancel}>
+            Скасувати
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -49,6 +74,7 @@ export function Ideas() {
   const list = useResource<IdeaList>("/api/ideas");
   const [adding, setAdding] = useState(false);
   const action = useAction();
+  const [asking, setAsking] = useState<number | null>(null);
   useScrollMemory(list.status === "ok");
   const ideas = list.data?.ideas;
   const resolved = list.data?.resolved ?? [];
@@ -66,6 +92,18 @@ export function Ideas() {
       await send("POST", `/api/ideas/${idea.id}/${resolve ? "resolve" : "restore"}`);
       list.reload();
     });
+  const remove = (idea: IdeaItem): Remove => ({
+    asking: asking === idea.id,
+    busy: action.busy,
+    ask: () => setAsking(idea.id),
+    cancel: () => setAsking(null),
+    confirm: () =>
+      action.run(async () => {
+        await send("POST", `/api/ideas/${idea.id}/delete`);
+        setAsking(null);
+        list.reload();
+      }),
+  });
   const toggle = (idea: IdeaItem, resolvedNow: boolean): Toggle => ({
     resolved: resolvedNow,
     busy: action.busy,
@@ -115,7 +153,13 @@ export function Ideas() {
                 <Icon name="down" size={18} />
               </summary>
               {resolved.map((idea) => (
-                <Idea key={idea.id} idea={idea} stamp={shortDate(idea.date)} toggle={toggle(idea, true)} />
+                <Idea
+                  key={idea.id}
+                  idea={idea}
+                  stamp={shortDate(idea.date)}
+                  toggle={toggle(idea, true)}
+                  remove={remove(idea)}
+                />
               ))}
             </details>
           )}

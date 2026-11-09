@@ -58,6 +58,31 @@ before(async () => {
   };
 });
 
+test("ideas: only a resolved idea can be deleted, and its note leaves the export", async () => {
+  const made = await call("POST", "/api/ideas", { body: "Випадково додана ідея" });
+  const id = made.body.id;
+  const out = join(dir, "ideas-delete");
+  exportIdeas(journal, out);
+  assert.equal(readdirSync(out).filter((n) => n.endsWith(".md")).length >= 1, true);
+
+  // A live idea is refused: the slip has to go through «вирішено» first.
+  assert.equal((await call("POST", `/api/ideas/${id}/delete`)).status, 400);
+  assert.ok(journal.idea(id));
+  assert.equal((await call("GET", `/api/ideas/${id}/delete`)).status, 405);
+
+  assert.equal((await call("POST", `/api/ideas/${id}/resolve`)).status, 200);
+  assert.equal((await call("POST", `/api/ideas/${id}/delete`)).status, 200);
+  assert.equal(journal.idea(id), undefined);
+  const list = (await call("GET", "/api/ideas")).body;
+  assert.ok(![...list.ideas, ...list.resolved].some((i: { id: number }) => i.id === id));
+  assert.equal((await call("POST", `/api/ideas/${id}/delete`)).status, 404);
+  assert.equal((await call("POST", "/api/ideas/9999/delete")).status, 404);
+
+  // The file written earlier moves to `.deleted/`, as for an idea deleted in the bot.
+  const report = exportIdeas(journal, out);
+  assert.equal(report.retired.length, 1);
+});
+
 after(() => {
   close();
   store.close();
@@ -80,6 +105,7 @@ test("writes need the owner's initData, like reads", async () => {
     ["POST", "/api/diary"],
     ["POST", "/api/ideas"],
     ["POST", "/api/ideas/1/resolve"],
+    ["POST", "/api/ideas/1/delete"],
     ["PATCH", `/api/library/${article}`],
     ["POST", `/api/library/${article}/impressions`],
   ])

@@ -692,6 +692,11 @@ mark {
 .item .st > span:last-child {
   flex: none;
 }
+.item .marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 .rx {
   display: inline-flex;
   align-items: center;
@@ -1043,6 +1048,33 @@ mark {
 }
 .resolved .idea.has-action {
   grid-template-columns: 64px 1fr 44px;
+}
+.resolved .idea.has-two {
+  grid-template-columns: 64px 1fr 44px 44px;
+}
+.resolved .idea.has-two .idea-act {
+  margin-right: 0;
+}
+.resolved .idea.has-two .idea-act:last-of-type {
+  margin-right: -10px;
+}
+.idea-ask {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.idea-ask button {
+  min-height: 44px;
+  padding: 0 2px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.idea-ask .danger {
+  color: var(--alert);
 }
 .tagadd {
   display: flex;

@@ -70,6 +70,12 @@ export function resolveIdea(
   return journal.setIdeaResolved(id, resolved ? now : null) ? done(true) : missing;
 }
 
+// Deleting is a second step after «вирішено»: a live idea is refused, so a slip cannot lose it.
+export function deleteIdea(journal: JournalStore, id: number): Written<true> {
+  if (journal.deleteResolvedIdea(id)) return done(true);
+  return journal.idea(id) ? bad("not_resolved") : missing;
+}
+
 const flag = (value: unknown, allowed: Record<string, string>) =>
   typeof value === "string" && Object.hasOwn(allowed, value);
 

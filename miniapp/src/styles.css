@@ -1153,3 +1153,318 @@ body {
     transition: none;
   }
 }
+
+/* your last words under a card */
+.item {
+  position: relative;
+}
+/* The title's link covers the whole card; what has its own tap (the note) sits above it. */
+.item h3 a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.note {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--sunken);
+  color: var(--ink);
+  font: 14.5px/1.45 var(--serif);
+  text-align: left;
+  cursor: default;
+}
+.note.more {
+  cursor: pointer;
+}
+.note .words {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.note .words.full {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+.note time {
+  display: block;
+  margin-top: 5px;
+  font: 12.5px/1.2 var(--sans);
+  color: var(--faint);
+}
+
+/* mosaics: a collection, an album, a month on the shelf */
+.mosaic {
+  display: grid;
+  aspect-ratio: 1;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--ground);
+}
+.mosaic .cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  font-size: 20px;
+}
+.mosaic.m2 {
+  grid-template-columns: 1fr 1fr;
+}
+.mosaic.m3 {
+  grid-template: 1fr 1fr / 1fr 1fr;
+}
+.mosaic.m3 > :first-child {
+  grid-row: span 2;
+}
+.mosaic.m4 {
+  grid-template: 1fr 1fr / 1fr 1fr;
+}
+.slot {
+  display: grid;
+  place-items: center;
+  background: var(--sunken);
+  color: var(--faint);
+}
+.sub {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.strip {
+  touch-action: pan-x pan-y;
+  display: flex;
+  gap: 12px;
+  margin: 0 -20px;
+  padding: 0 20px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.strip::-webkit-scrollbar {
+  display: none;
+}
+.coll {
+  flex: none;
+  width: 112px;
+  display: block;
+  text-align: left;
+}
+.coll b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 8px;
+  font: 600 14.5px/1.3 var(--serif);
+  overflow-wrap: anywhere;
+}
+.coll small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.coll.new {
+  align-self: flex-start;
+}
+.coll.new b {
+  color: var(--accent);
+}
+.albumbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 2px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 16px;
+  background: var(--sunken);
+}
+.albumbar .mosaic {
+  flex: none;
+  width: 56px;
+  border-radius: 10px;
+}
+.albumbar .mosaic .cover {
+  font-size: 11px;
+}
+.albumbar .said {
+  flex: 1;
+  min-width: 0;
+}
+.albumbar b {
+  display: block;
+  font: 600 18px/1.2 var(--serif);
+}
+.albumbar small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.albumbar > svg {
+  flex: none;
+  color: var(--faint);
+}
+
+/* collection, album, shelf */
+.barActs {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  margin-right: -4px;
+}
+.detailbar .barActs .textbtn {
+  margin: 0;
+}
+.textbtn.danger {
+  color: var(--alert);
+}
+.collhead {
+  padding: 6px 0 8px;
+}
+.collhead h1 {
+  font: 600 30px/1.15 var(--serif);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.collhead p {
+  margin-top: 4px;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+.picks {
+  margin-top: 16px;
+}
+.tags.sets li {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.tags.sets a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tagadd.stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.tagadd.stacked .input {
+  flex: none;
+}
+.tagadd.stacked .go {
+  height: 50px;
+  margin-top: 8px;
+  padding: 0;
+  color: var(--ground);
+}
+.albumhead {
+  padding-top: 6px;
+}
+.albumhead .kicker {
+  font-size: 13.5px;
+  color: var(--faint);
+}
+.albumhead h1 {
+  margin-top: 4px;
+  font: 600 40px/1.05 var(--serif);
+  letter-spacing: -0.02em;
+}
+.albumhead .tally {
+  margin-top: 10px;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+.chapter {
+  margin-top: 28px;
+}
+.chapter .sub {
+  margin: 0 0 10px;
+}
+.wall {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.wall a,
+.wall .slot {
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 12px;
+}
+.wall .slot {
+  display: grid;
+}
+.wall .cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  font-size: 32px;
+}
+.hint {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: var(--faint);
+}
+.quote {
+  display: block;
+  padding: 10px 0 14px;
+}
+.quote p {
+  font: 19px/1.5 var(--serif);
+  letter-spacing: -0.005em;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.quote:first-of-type p {
+  font-size: 23px;
+  line-height: 1.4;
+}
+.quote small {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--faint);
+}
+.neighbours {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 32px;
+}
+.neighbours a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+}
+.shelf {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 16px;
+  padding: 8px 0 12px;
+}
+.shelfcard b {
+  display: block;
+  margin-top: 8px;
+  font: 600 17px/1.2 var(--serif);
+}
+.shelfcard small {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CollectionList } from "../../../src/miniapp/collection-types.ts";
 import type { LibraryItem } from "../../../src/miniapp/library-types.ts";
 import { ApiError, send } from "../api.ts";
 import { dayMonth } from "../format.ts";
@@ -6,8 +7,9 @@ import { useBack, useResource } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
 import { Cover } from "../library/Cover.tsx";
 import { BackBar, Bars, Empty, Failed } from "../parts.tsx";
-import { goBack, sectionHash } from "../router.ts";
+import { collectionHash, goBack, sectionHash } from "../router.ts";
 import { openLink } from "../telegram.ts";
+import { CollectionPicker } from "./CollectionSheet.tsx";
 import { EditSheet } from "./EditSheet.tsx";
 import { TextSheet } from "./TextSheet.tsx";
 
@@ -16,6 +18,8 @@ const IMPRESSION_LIMIT = 4_000;
 export function Material({ id }: { id: string }) {
   const item = useResource<LibraryItem>(`/api/library/${encodeURIComponent(id)}`);
   const [editing, setEditing] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const sets = useResource<CollectionList>("/api/collections");
   const [noting, setNoting] = useState(false);
   const back = () => goBack(sectionHash("media"));
   useBack(true, back);
@@ -29,10 +33,15 @@ export function Material({ id }: { id: string }) {
         <div className="detailbar">
           <BackBar onBack={back} />
           {data && (
-            <button className="textbtn" onClick={() => setEditing(true)}>
-              <Icon name="edit" size={18} />
-              Змінити
-            </button>
+            <div className="barActs">
+              <button className="textbtn" onClick={() => setPicking(true)}>
+                <Icon name="folder" size={18} />У добірку
+              </button>
+              <button className="textbtn" onClick={() => setEditing(true)}>
+                <Icon name="edit" size={18} />
+                Змінити
+              </button>
+            </div>
           )}
         </div>
         {data ? (
@@ -60,6 +69,20 @@ export function Material({ id }: { id: string }) {
                 {data.tags.map((tag) => (
                   <li key={tag}>{tag}</li>
                 ))}
+              </ul>
+            )}
+            {data.collections.length > 0 && sets.data && (
+              <ul className="tags sets" aria-label="Добірки">
+                {sets.data.collections
+                  .filter((c) => data.collections.includes(c.id))
+                  .map((c) => (
+                    <li key={c.id}>
+                      <a href={collectionHash(c.id)}>
+                        <Icon name="folder" size={14} />
+                        {c.name}
+                      </a>
+                    </li>
+                  ))}
               </ul>
             )}
             {data.entities.length > 0 && <p className="mentions">Згадано: {data.entities.join(", ")}</p>}
@@ -96,6 +119,9 @@ export function Material({ id }: { id: string }) {
           <Bars className="reading" rows={[100, 45, 90, 70, 100, 95, 60]} />
         )}
       </main>
+      {data && picking && (
+        <CollectionPicker item={data} onChange={item.set} onClose={() => setPicking(false)} />
+      )}
       {data && editing && <EditSheet item={data} onChange={item.set} onClose={() => setEditing(false)} />}
       {data && noting && (
         <TextSheet

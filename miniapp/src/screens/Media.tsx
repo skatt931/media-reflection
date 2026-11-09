@@ -1,11 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { LibraryCard, LibraryList } from "../../../src/miniapp/library-types.ts";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Shelf } from "../../../src/miniapp/album-types.ts";
+import type { CollectionList } from "../../../src/miniapp/collection-types.ts";
+import type { Labels, LibraryCard, LibraryList, Thought } from "../../../src/miniapp/library-types.ts";
 import { Cover } from "../library/Cover.tsx";
-import { capital, materialsLabel, monthKey, monthName, parts, shortDate } from "../format.ts";
+import { Mosaic } from "../library/Mosaic.tsx";
+import {
+  capital,
+  dayMonth,
+  materialsLabel,
+  monthKey,
+  monthName,
+  parts,
+  plural,
+  shortDate,
+} from "../format.ts";
 import { useBack, useDebounced, useResource, useScrollMemory } from "../hooks.ts";
 import { Icon, type IconName } from "../icons.tsx";
-import { Bars, Empty, Failed } from "../parts.tsx";
-import { materialHash } from "../router.ts";
+import { Bars, Empty, Failed, Marked } from "../parts.tsx";
+import { albumHash, collectionHash, materialHash } from "../router.ts";
+import { CollectionName } from "./CollectionSheet.tsx";
 import { FilterSheet, isFiltered, noFilters, toggle, type Filters } from "./Filters.tsx";
 
 function path(filters: Filters, q: string) {
@@ -31,8 +44,38 @@ export function Reaction({ reaction, label }: { reaction: string; label: string 
   );
 }
 
-function Item({ card, data }: { card: LibraryCard; data: LibraryList }) {
-  const { labels } = data;
+// Your own last words about the material, two lines of them. A tap opens the rest in place (when there is a
+// rest), and the card itself still opens the material.
+function Note({ thought, terms }: { thought: Thought; terms: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  const text = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = text.current;
+    if (!node || open) return;
+    const measure = () => setCut(node.scrollHeight > node.clientHeight + 1);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(node);
+    return () => watch.disconnect();
+  }, [thought.body, open]);
+  const toggleOpen = cut || open;
+  return (
+    <button
+      type="button"
+      className={toggleOpen ? "note more" : "note"}
+      aria-expanded={toggleOpen ? open : undefined}
+      onClick={() => toggleOpen && setOpen(!open)}
+    >
+      <span ref={text} className={open ? "words full" : "words"}>
+        <Marked text={thought.body} terms={terms} />
+      </span>
+      {open && <time dateTime={thought.date}>{dayMonth(thought.date)}</time>}
+    </button>
+  );
+}
+
+export function Item({ card, labels, terms = [] }: { card: LibraryCard; labels: Labels; terms?: string[] }) {
   const by = card.creator ?? card.source;
   const status = card.status ? labels.statuses[card.status] : null;
   const last = status
@@ -41,11 +84,14 @@ function Item({ card, data }: { card: LibraryCard; data: LibraryList }) {
       ? card.tags.join(" · ")
       : shortDate(card.date);
   return (
-    <a className="item" href={materialHash(card.id)} data-card={card.id}>
+    <div className="item" data-card={card.id}>
       <Cover id={card.id} title={card.title} has={card.cover} />
       <div className="body">
-        <h3>{card.title}</h3>
+        <h3>
+          <a href={materialHash(card.id)}>{card.title}</a>
+        </h3>
         <p className="by">{[labels.types[card.type] ?? card.type, by].filter(Boolean).join(" · ")}</p>
+        {card.thought && <Note thought={card.thought} terms={terms} />}
         <p className="st">
           <span>{last}</span>
           {card.reaction ? (
@@ -60,6 +106,53 @@ function Item({ card, data }: { card: LibraryCard; data: LibraryList }) {
           ) : null}
         </p>
       </div>
+    </div>
+  );
+}
+
+// Collections as small mosaics, in one row you can scroll. The last tile starts a new one.
+function Collections({ list, onNew }: { list: CollectionList; onNew: () => void }) {
+  return (
+    <section className="strip-wrap" aria-label="Добірки">
+      <h2 className="sub">Добірки</h2>
+      <div className="strip" data-noswipe>
+        {list.collections.map((c) => (
+          <a key={c.id} className="coll" href={collectionHash(c.id)}>
+            <Mosaic tiles={c.tiles} />
+            <b>{c.name}</b>
+            <small>{materialsLabel(c.count)}</small>
+          </a>
+        ))}
+        <button className="coll new" onClick={onNew}>
+          <span className="mosaic m1">
+            <span className="slot">
+              <Icon name="plus" size={26} />
+            </span>
+          </span>
+          <b>Нова добірка</b>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// The month's album: the newest one sits above the list, a tap opens it.
+function AlbumBar({ shelf }: { shelf: Shelf }) {
+  const album = shelf.albums[0];
+  if (!album) return null;
+  const word = capital(monthName(Number(album.period.slice(5)) - 1));
+  const facts = [
+    album.loved ? `${album.loved} ${plural(album.loved, "улюблений", "улюблених", "улюблених")}` : null,
+    album.thoughts ? `${album.thoughts} ${plural(album.thoughts, "думка", "думки", "думок")}` : null,
+  ].filter(Boolean);
+  return (
+    <a className="albumbar" href={albumHash(album.period)}>
+      <Mosaic tiles={album.tiles} fill={!album.done} />
+      <span className="said">
+        <b>Мій {word.toLowerCase()}</b>
+        <small>{facts.length ? facts.join(" · ") : album.done ? "Альбом місяця" : "Наповнюється"}</small>
+      </span>
+      <Icon name="next" size={20} />
     </a>
   );
 }
@@ -85,7 +178,7 @@ function Months({ data }: { data: LibraryList }) {
               <span>{materialsLabel(items.length)}</span>
             </h2>
             {items.map((card) => (
-              <Item key={card.id} card={card} data={data} />
+              <Item key={card.id} card={card} labels={data.labels} terms={data.terms} />
             ))}
           </section>
         );
@@ -95,6 +188,9 @@ function Months({ data }: { data: LibraryList }) {
 }
 
 export function Media() {
+  const collections = useResource<CollectionList>("/api/collections");
+  const shelf = useResource<Shelf>("/api/albums");
+  const [naming, setNaming] = useState(false);
   const [filters, setFilters] = useState(remembered.filters);
   const [text, setText] = useState(remembered.text);
   const [searching, setSearching] = useState(remembered.text !== "");
@@ -206,6 +302,11 @@ export function Media() {
         </div>
       )}
 
+      {!narrowed && !!data?.total && shelf.data && <AlbumBar shelf={shelf.data} />}
+      {!narrowed && !!data?.total && collections.data && collections.data.collections.length > 0 && (
+        <Collections list={collections.data} onNew={() => setNaming(true)} />
+      )}
+
       {data ? (
         data.total === 0 ? (
           <Empty>Медіатека порожня. Надішли боту посилання, і матеріал з’явиться тут.</Empty>
@@ -236,6 +337,15 @@ export function Media() {
         <Bars className="rows" rows={[90, 70, 85, 60, 90, 75]} />
       )}
 
+      {naming && (
+        <CollectionName
+          onClose={() => setNaming(false)}
+          onDone={() => {
+            setNaming(false);
+            collections.reload();
+          }}
+        />
+      )}
       {sheet && data && (
         <FilterSheet
           filters={filters}

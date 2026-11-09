@@ -4,7 +4,18 @@ import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
 import type { JournalStore } from "../journal.ts";
 import type { Store } from "../store.ts";
+import { localDate } from "../fields.ts";
 import { checkInitData } from "./auth.ts";
+import { albumOf, shelfOf } from "./album.ts";
+import {
+  addCollection,
+  collectionList,
+  collectionView,
+  editCollection,
+  putInCollection,
+  removeCollection,
+  takeOutOfCollection,
+} from "./collections.ts";
 import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
 import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
 import {
@@ -148,6 +159,51 @@ async function library(req: IncomingMessage, url: URL, res: ServerResponse, stor
   return item ? json(res, 200, item) : notFound(res);
 }
 
+const COLLECTION = /^\/api\/collections\/([^/]+?)(?:\/(delete|items|remove))?$/;
+
+async function collections(req: IncomingMessage, url: URL, res: ServerResponse, store: Store | undefined) {
+  if (!store) return unavailable(res);
+  const method = req.method ?? "GET";
+  const reads = method === "GET" || method === "HEAD";
+  if (url.pathname === "/api/collections") {
+    if (reads) return json(res, 200, collectionList(store));
+    if (method !== "POST") return json(res, 405, { error: "method_not_allowed" });
+    return answer(res, addCollection(store, await readBody(req)), 201);
+  }
+  const match = COLLECTION.exec(url.pathname);
+  if (!match) return notFound(res);
+  let id: string;
+  try {
+    id = decodeURIComponent(match[1]);
+  } catch {
+    return notFound(res);
+  }
+  const action = match[2];
+  if (reads && !action) {
+    const view = collectionView(store, id);
+    return view ? json(res, 200, view) : notFound(res);
+  }
+  if (method === "PATCH" && !action) return answer(res, editCollection(store, id, await readBody(req)));
+  if (method !== "POST" || !action) return json(res, 405, { error: "method_not_allowed" });
+  if (action === "delete") return answer(res, removeCollection(store, id));
+  const input = await readBody(req);
+  return answer(
+    res,
+    action === "items" ? putInCollection(store, id, input) : takeOutOfCollection(store, id, input),
+  );
+}
+
+async function albums(req: IncomingMessage, url: URL, res: ServerResponse, options: MiniAppOptions) {
+  const store = options.store;
+  if (!store) return unavailable(res);
+  if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "method_not_allowed" });
+  const today = options.now ? localDate(options.now()) : undefined;
+  if (url.pathname === "/api/albums") return json(res, 200, shelfOf(store, today));
+  const match = /^\/api\/albums\/(\d{4}-\d{2})$/.exec(url.pathname);
+  const album = match && albumOf(store, options.journal, match[1], today);
+  return album ? json(res, 200, album) : notFound(res);
+}
+
 // Every route gets here only after initData was verified.
 async function route(
   req: IncomingMessage,
@@ -163,6 +219,9 @@ async function route(
       : json(res, 405, { error: "method_not_allowed" });
   if (path === "/api/library" || path.startsWith("/api/library/"))
     return library(req, url, res, options.store);
+  if (path === "/api/collections" || path.startsWith("/api/collections/"))
+    return collections(req, url, res, options.store);
+  if (path === "/api/albums" || path.startsWith("/api/albums/")) return albums(req, url, res, options);
   const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
   const idea = /^\/api\/ideas\/(\d{1,15})\/(resolve|restore|delete)$/.exec(path);
   if (path !== "/api/diary" && path !== "/api/ideas" && !diary && !idea) return notFound(res);

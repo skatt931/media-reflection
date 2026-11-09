@@ -56,12 +56,18 @@ function kindOf(from: Route, to: Route): Kind | null {
 
 // A swipe closes a material (back to the media list) and a diary entry (back to wherever it was opened from:
 // the list, a search, the entry before it).
-const closable = (route: Route) => route.screen === "material" || route.screen === "entry";
+// The screens of the library close the same way: back to the one they were opened from (a list, a collection,
+// an album), and an entry opened from an album goes back to it.
+const closable = (route: Route) =>
+  route.screen !== "list" && route.screen !== "compose" && route.screen !== "search";
 const homeOf = (route: Route) => sectionHash(route.section);
 function underOf(route: Route): Route {
-  if (route.screen !== "entry") return list(route.section);
   const prev = before();
-  return prev && prev.section === "diary" && prev.screen !== "compose" ? prev : list("diary");
+  if (route.screen === "entry")
+    return prev && (prev.section === "diary" || prev.screen === "album") && prev.screen !== "compose"
+      ? prev
+      : list("diary");
+  return prev && prev.section === route.section && depth(prev) < depth(route) ? prev : list(route.section);
 }
 
 // Touches that start here belong to the thing touched, not to the swipe.

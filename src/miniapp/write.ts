@@ -6,9 +6,9 @@ import { normalizeTags, type Store } from "../store.ts";
 // gets. A refusal says which field was wrong, never why in detail.
 export type Written<T> = { ok: true; value: T } | { ok: false; status: 400 | 404; error: string };
 
-const bad = (error: string): Written<never> => ({ ok: false, status: 400, error });
-const missing: Written<never> = { ok: false, status: 404, error: "not_found" };
-const done = <T>(value: T): Written<T> => ({ ok: true, value });
+export const bad = (error: string): Written<never> => ({ ok: false, status: 400, error });
+export const missing: Written<never> = { ok: false, status: 404, error: "not_found" };
+export const done = <T>(value: T): Written<T> => ({ ok: true, value });
 
 export const MAX_DIARY = 100_000;
 export const MAX_NOTE = 4_000;
@@ -16,10 +16,10 @@ export const MAX_TAGS = 20;
 // A retry of a request that did arrive (a lost answer, a double tap) must not write the same text twice.
 const REPEAT_WINDOW = 2 * 60 * 1000;
 
-const record = (input: unknown): Record<string, unknown> =>
+export const record = (input: unknown): Record<string, unknown> =>
   input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
 
-function text(value: unknown, max: number): string | null {
+export function text(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
   const body = value.replace(/\r\n?/g, "\n").trim();
   return body && body.length <= max ? body : null;

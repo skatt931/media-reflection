@@ -5,6 +5,9 @@ export type Labels = {
   reactions: Record<string, string>;
 };
 
+// The last thing written about a material, for the list. `hit` marks a piece cut around a search word.
+export type Thought = { body: string; date: string; hit: boolean };
+
 export type LibraryCard = {
   id: string;
   title: string;
@@ -19,10 +22,13 @@ export type LibraryCard = {
   unreviewed: boolean;
   // No written thought yet, even if there is a reaction; resources count too.
   noThought: boolean;
+  thought: Thought | null;
 };
 
 export type LibraryList = {
   items: LibraryCard[];
+  // The stems of the search words, to mark them in the thoughts.
+  terms: string[];
   total: number;
   counts: { saved: number; unreviewed: number; noThought: number; types: Record<string, number> };
   labels: Labels;
@@ -34,6 +40,8 @@ export type LibraryItem = LibraryCard & {
   description: string | null;
   entities: string[];
   impressions: { date: string; body: string }[];
+  // The ids of the collections this material is in.
+  collections: string[];
   labels: Labels;
 };
 

@@ -4,6 +4,8 @@ import { Icon, type IconName } from "./icons.tsx";
 import { sectionHash, useRoute, type Route, type Section } from "./router.ts";
 import { Stage } from "./stage/Stage.tsx";
 import { initData } from "./telegram.ts";
+import { Album, Albums } from "./screens/Album.tsx";
+import { Collection } from "./screens/Collection.tsx";
 import { Compose } from "./screens/Compose.tsx";
 import { Diary } from "./screens/Diary.tsx";
 import { Entry } from "./screens/Entry.tsx";
@@ -52,6 +54,9 @@ function screenOf(route: Route) {
   if (route.screen === "compose") return <Compose />;
   if (route.screen === "entry") return <Entry id={route.id} />;
   if (route.screen === "material") return <Material id={route.id} />;
+  if (route.screen === "collection") return <Collection id={route.id} />;
+  if (route.screen === "albums") return <Albums />;
+  if (route.screen === "album") return <Album period={route.period} />;
   if (route.screen === "search") return <Search section={route.section} initial={route.q} />;
   if (route.section === "diary") return <Diary />;
   return route.section === "ideas" ? <Ideas /> : <Media />;

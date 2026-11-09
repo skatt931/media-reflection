@@ -233,3 +233,38 @@ test("library: read-only, and a cover name cannot leave the covers folder", asyn
   assert.equal((await get(`/api/library/${ids.game}/cover`)).status, 404);
   assert.equal((await list()).items.find((i: any) => i.id === ids.game).cover, false);
 });
+
+test("library: each card carries the last thing written about it, none when nothing was", async () => {
+  const body = await list();
+  const by = (key: string) => body.items.find((i: any) => i.id === ids[key]);
+  assert.deepEqual(by("article").thought, { body: "Перечитав увечері.", date: "2026-11-09", hit: false });
+  assert.equal(by("podcast").thought.body, "Слухав у дорозі.");
+  assert.equal(by("game").thought, null);
+  assert.deepEqual(body.terms, []);
+});
+
+test("library: a search shows the note that matched, cut around the hit, with the stems to mark", async () => {
+  const body = await list("?q=паузою");
+  const [article] = body.items;
+  assert.equal(article.id, ids.article);
+  assert.equal(article.thought.hit, true);
+  assert.match(article.thought.body, /Найкраща думка: пауза/);
+  assert.deepEqual(body.terms, ["пауз"]);
+  // Found by the title only: the last note is shown, unmarked.
+  const byTitle = await list("?q=повільний");
+  assert.equal(byTitle.items[0].thought.hit, false);
+  assert.equal(byTitle.items[0].thought.body, "Перечитав увечері.");
+});
+
+test("library: a long note is flattened to one line and cut at a word", async () => {
+  const long = Array.from({ length: 200 }, (_, i) => `слово${i}`).join(" ");
+  store.addReflection(300, ids.game, `Перший рядок\n\n${long}`, at("2026-11-09"));
+  try {
+    const game = (await list()).items.find((i: any) => i.id === ids.game);
+    assert.ok(game.thought.body.startsWith("Перший рядок слово0"));
+    assert.ok(game.thought.body.endsWith("…") && game.thought.body.length <= 601);
+    assert.ok(!game.thought.body.includes("\n"));
+  } finally {
+    store.removeReflection(300);
+  }
+});

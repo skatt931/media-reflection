@@ -1,13 +1,17 @@
 import { dirname, extname } from "node:path";
+import { collectionsOf } from "../collections.ts";
 import { localDate, reactions, statuses, types } from "../fields.ts";
 import { retrieve } from "../search.ts";
 import type { Store } from "../store.ts";
+import { fold, matches, stems } from "../words.ts";
+import { snippet } from "./data.ts";
 import {
   NO_REACTION,
   type Labels,
   type LibraryCard,
   type LibraryItem,
   type LibraryList,
+  type Thought,
 } from "./library-types.ts";
 
 type Row = Record<string, any>;
@@ -54,8 +58,48 @@ export function libraryFilter(params: URLSearchParams): LibraryFilter {
   };
 }
 
+// What `card` needs besides the item itself, read once for a whole list.
+type Context = {
+  unreviewed: Set<string>;
+  noThought: Set<string>;
+  // Each item's own notes, oldest first.
+  notes: Map<string, Row[]>;
+  // The search the list answers, as the stems to look for in the notes.
+  q: string;
+  terms: string[];
+};
+
+const THOUGHT_MAX = 600;
+
+// One line of text, cut at a word with an ellipsis when it is long.
+function flatten(text: string, max: number) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const space = flat.lastIndexOf(" ", max);
+  return flat.slice(0, space > max / 2 ? space : max).replace(/[\s,;:]+$/, "") + "…";
+}
+
+// The latest thing the owner wrote about the item. With a search: the latest note that holds the words (cut
+// around the first hit), or failing that one of them, or failing that the latest note, unmarked.
+export function thoughtOf(notes: Row[], q = "", terms: string[] = []): Thought | null {
+  const last = notes.at(-1);
+  if (!last) return null;
+  const note = (r: Row, hit: boolean): Thought => ({
+    body: hit ? snippet(r.body, terms) : flatten(r.body, THOUGHT_MAX),
+    date: localDate(new Date(r.created_at)),
+    hit,
+  });
+  if (q) {
+    const all = [...notes].reverse().find((r) => matches(fold(r.body), q));
+    if (all) return note(all, true);
+    const some = [...notes].reverse().find((r) => terms.some((t) => fold(r.body).includes(t)));
+    if (some) return note(some, true);
+  }
+  return note(last, false);
+}
+
 // Only what the screens show: bookkeeping fields (manual locks, metadata versions) stay on the server.
-function card(s: Store, item: Row, unreviewed: Set<string>, noThought: Set<string>): LibraryCard {
+function card(s: Store, item: Row, ctx: Context): LibraryCard {
   return {
     id: item.id as string,
     title: item.title as string,
@@ -67,14 +111,37 @@ function card(s: Store, item: Row, unreviewed: Set<string>, noThought: Set<strin
     date: dateOf(item),
     tags: ((item.tags as string[] | undefined) ?? []).slice(0, 3),
     cover: coverOf(s, item) !== null,
-    unreviewed: unreviewed.has(item.id),
-    noThought: noThought.has(item.id),
+    unreviewed: ctx.unreviewed.has(item.id),
+    noThought: ctx.noThought.has(item.id),
+    thought: thoughtOf(ctx.notes.get(item.id) ?? [], ctx.q, ctx.terms),
   };
 }
 
+function context(s: Store, today: string, q = ""): Context {
+  const notes = new Map<string, Row[]>();
+  for (const r of s.all("SELECT item_id, body, created_at FROM reflections ORDER BY created_at, update_id"))
+    notes.set(r.item_id, [...(notes.get(r.item_id) ?? []), r]);
+  return {
+    unreviewed: new Set<string>(s.unreflected(today).map((i) => i.id)),
+    noThought: new Set<string>(s.unthought().map((i) => i.id)),
+    notes,
+    q,
+    terms: q ? stems(q) : [],
+  };
+}
+
+// The cards of these materials, in this order (a material that is gone is skipped).
+export function libraryCards(s: Store, ids: string[], today = localDate()): LibraryCard[] {
+  const ctx = context(s, today);
+  return ids.flatMap((id) => {
+    const item = s.item(id);
+    return item ? [card(s, item, ctx)] : [];
+  });
+}
+
 export function libraryList(s: Store, filter: LibraryFilter, today = localDate()): LibraryList {
-  const unreviewed = new Set<string>(s.unreflected(today).map((i) => i.id));
-  const noThought = new Set<string>(s.unthought().map((i) => i.id));
+  const ctx = context(s, today, filter.q);
+  const { unreviewed, noThought } = ctx;
   const all = s.items();
   const counts = {
     saved: 0,
@@ -113,24 +180,33 @@ export function libraryList(s: Store, filter: LibraryFilter, today = localDate()
         (!filter.noThought || noThought.has(item.id)),
     )
     .sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || b.created_at.localeCompare(a.created_at))
-    .map((item) => card(s, item, unreviewed, noThought));
-  return { items, total: all.length, counts, labels };
+    .map((item) => card(s, item, ctx));
+  return { items, terms: ctx.terms, total: all.length, counts, labels };
 }
 
 export function libraryItem(s: Store, id: string): LibraryItem | undefined {
   const item = s.item(id);
   if (!item) return undefined;
+  const notes = s.reflections(id);
+  const ctx: Context = {
+    unreviewed: new Set(s.unreflected().map((i) => i.id)),
+    noThought: new Set(s.unthought().map((i) => i.id)),
+    notes: new Map([[id, notes]]),
+    q: "",
+    terms: [],
+  };
   return {
-    ...card(s, item, new Set(s.unreflected().map((i) => i.id)), new Set(s.unthought().map((i) => i.id))),
+    ...card(s, item, ctx),
     url: web(item.url),
     summary: (item.summary as string | undefined) ?? null,
     description: (item.description as string | undefined) ?? null,
     entities: (item.entities as string[] | undefined) ?? [],
     tags: (item.tags as string[] | undefined) ?? [],
-    impressions: s.reflections(id).map((r) => ({
+    impressions: notes.map((r) => ({
       date: localDate(new Date(r.created_at)),
       body: r.body as string,
     })),
+    collections: collectionsOf(s, id),
     labels,
   };
 }

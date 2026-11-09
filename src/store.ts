@@ -51,7 +51,9 @@ export class Store {
    CREATE TABLE IF NOT EXISTS enrichment(update_id INTEGER PRIMARY KEY, item_id TEXT REFERENCES items(id), payload TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS vault_pending(vault TEXT NOT NULL,item_id TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(vault,item_id));
    CREATE TABLE IF NOT EXISTS vault_exports(vault TEXT NOT NULL,item_id TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(vault,item_id));
-   CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, item_id TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT, at TEXT NOT NULL);`);
+   CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, item_id TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT, at TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS collection_items(collection_id TEXT NOT NULL, item_id TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY(collection_id,item_id));`);
     if (!this.all("PRAGMA table_info(items)").some((c) => c.name === "details"))
       this.db.exec("ALTER TABLE items ADD COLUMN details TEXT NOT NULL DEFAULT '{}'");
     if (previousVersion < 3) {
@@ -256,6 +258,9 @@ export class Store {
         this.transaction(() => {
           for (const table of ["captures", "reflections", "prompts", "enrichment"])
             this.run(`UPDATE ${table} SET item_id=? WHERE item_id=?`, existing, id);
+          // Both may sit in the same collection: the merged item keeps one place.
+          this.run("UPDATE OR IGNORE collection_items SET item_id=? WHERE item_id=?", existing, id);
+          this.run("DELETE FROM collection_items WHERE item_id=?", id);
           this.run("DELETE FROM items WHERE id=?", id);
         });
         return existing;
@@ -397,7 +402,15 @@ export class Store {
     if (!item) return;
     const cover = this.coverPath(item);
     this.transaction(() => {
-      for (const table of ["captures", "reflections", "prompts", "enrichment", "vault_pending", "events"])
+      for (const table of [
+        "captures",
+        "reflections",
+        "prompts",
+        "enrichment",
+        "vault_pending",
+        "events",
+        "collection_items",
+      ])
         this.run(`DELETE FROM ${table} WHERE item_id=?`, id);
       this.run("DELETE FROM items WHERE id=?", id);
     });

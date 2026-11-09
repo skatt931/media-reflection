@@ -8,6 +8,17 @@ import type { Transcribe } from "./voice.ts";
 import { findUrl } from "./links.ts";
 import { JournalStore, parseDiaryDate, type IdeaSource } from "./journal.ts";
 import { breakdown, review, slideText, validPeriod, previousPeriod, type Review } from "./stats.ts";
+import {
+  MAX_NAME,
+  addToCollection,
+  collection,
+  collectionRows,
+  collectionsOf,
+  createCollection,
+  memberIds,
+  namesOf,
+  removeFromCollection,
+} from "./collections.ts";
 
 export type Out = {
   // Replace an existing message instead of sending a new one.
@@ -90,11 +101,26 @@ const dateChoices = (id: string) => ({
 const detailButtons = (id: string) => ({
   inline_keyboard: [
     ...pairs(Object.entries(fields).map(([key, label]) => button(label, `edit:${key}:${id}`))),
-    [button("Тип", `type:${id}`), button("Стан", `states:${id}`)],
+    [button("Тип", `type:${id}`), button("Стан", `states:${id}`), button("В добірку", `colls:${id}`)],
     [button("Видалити", `delete:${id}`)],
     backRow(id),
   ],
 });
+// Every collection with a tick where the material already is, so one tap adds it and the next takes it out.
+const collectionChoices = (s: Store, id: string) => {
+  const mine = new Set(collectionsOf(s, id));
+  return {
+    inline_keyboard: [
+      ...collectionRows(s)
+        .slice(0, 20)
+        .map((c) => [
+          button(`${mine.has(c.id) ? "✓ " : ""}${short(c.name, 40)} · ${c.count}`, `coll:${c.id}:${id}`),
+        ]),
+      [button("+ Нова добірка", `collnew:${id}`)],
+      backRow(id),
+    ],
+  };
+};
 const choices = (id: string, map: Record<string, string>, action: string) => ({
   inline_keyboard: [
     ...pairs(Object.entries(map).map(([key, label]) => button(label, `${action}:${key}:${id}`))),
@@ -114,6 +140,8 @@ function card(s: Store, id: string) {
   if (i.type !== "resource" || i.consumed_on)
     lines.push(`Коли: ${i.consumed_on ?? "—"}${i.date_source === "capture" ? " (день надсилання)" : ""}`);
   if (i.tags.length) lines.push(`Теми: ${i.tags.join(", ")}`);
+  const sets = namesOf(s, id);
+  if (sets.length) lines.push(`Добірки: ${sets.join(", ")}`);
   if (i.description && i.description !== i.title) lines.push("", short(i.description, 300));
   if (notes.length) lines.push("", "Мої враження:", ...notes.slice(-3).map((n) => "• " + n.body));
   if (i.summary) lines.push("", `AI: ${i.summary}`);
@@ -252,6 +280,7 @@ const libraryMenu = {
     [button("Останні", "library:recent"), button("На потім", "library:later")],
     [button("Без вражень", "library:unreviewed"), button("Без думки", "library:nothought")],
     [button("За типом", "library:types"), button("Підсумок місяця", "library:review")],
+    [button("Добірки", "library:collections")],
   ],
 };
 // Only the types that have items, most common first.
@@ -397,15 +426,23 @@ export async function weekly(
 }
 
 // A review is one message; ← → switch slides. The slides are stored with the message.
+// A month's review also opens that month's album in the Mini App, when there is one (MINIAPP_URL).
+const albumButton = (r: Review) => {
+  const url = (process.env.MINIAPP_URL ?? "").trim();
+  if (r.period.length !== 7 || !/^https:\/\/[^\s/]+/.test(url)) return [];
+  const link = new URL(url);
+  link.searchParams.set("go", `media/album/${r.period}`);
+  return [[{ text: "Мій альбом місяця", web_app: { url: link.toString() } }]];
+};
 const slideButtons = (r: Review, index: number) => {
   const n = r.slides.length;
-  return n > 1
-    ? {
-        inline_keyboard: [
-          [button("←", `slide:${(index - 1 + n) % n}`), button("→", `slide:${(index + 1) % n}`)],
-        ],
-      }
-    : undefined;
+  const rows = [
+    ...(n > 1
+      ? [[button("←", `slide:${(index - 1 + n) % n}`), button("→", `slide:${(index + 1) % n}`)]]
+      : []),
+    ...albumButton(r),
+  ];
+  return rows.length ? { inline_keyboard: rows } : undefined;
 };
 async function sendReview(s: Store, send: Send, r: Review, out: Out = {}) {
   const mid = await send(slideText(r, 0), slideButtons(r, 0), out);
@@ -969,6 +1006,25 @@ export async function handle(
     }
   }
 
+  // A new collection, named in the next message, with the material it was started from.
+  async function newCollection(id: string, text: string) {
+    const made = createCollection(s, text, at);
+    if (!made.ok) {
+      await send(
+        made.error === "exists"
+          ? "Така добірка вже є. Іншу назву? «Скасувати» — вийти."
+          : made.error === "limit"
+            ? "Добірок уже забагато."
+            : `Назва до ${MAX_NAME} символів. Спробуй ще раз.`,
+        dialogMenu,
+      );
+      return;
+    }
+    addToCollection(s, made.id, id, at);
+    s.setContext(null);
+    await send(`Створено «${collection(s, made.id)!.name}»: ${short(s.item(id)!.title)}`, menu);
+  }
+
   async function onText(text: string) {
     const replyTo = m.reply_to_message?.message_id;
     const paged = pagerOf(replyTo);
@@ -977,6 +1033,7 @@ export async function handle(
     if (reply) await remember(reply.item_id, text, s.value(`followup:${replyTo}`) !== undefined);
     else if (replyTo) await send("Не знаю, до якого запису це. Натисни «Додати думку» під карткою.", menu);
     else if (active?.mode === "edit") await applyEdit(text);
+    else if (active?.mode === "collection") await newCollection(active.id, text);
     else if (findUrl(text)) await capture(text);
     else if (isLater(text)) {
       const item = recentLink();
@@ -1160,7 +1217,30 @@ export async function handle(
       else if (parts[1] === "unreviewed") await list("Без вражень", s.unreflected(), here);
       else if (parts[1] === "nothought") await list("Без думки", s.unthought(), here);
       else if (parts[1] === "review") await showReview(localDate().slice(0, 7), here);
-      else await list("Останні", s.items(), here);
+      else if (parts[1] === "collections") {
+        const rows = collectionRows(s).slice(0, 30);
+        await send(
+          rows.length ? "Добірки:" : "Добірок ще немає. Створи першу: «Змінити» під карткою → «В добірку».",
+          {
+            inline_keyboard: [
+              ...rows.map((c) => [button(`${short(c.name, 40)} · ${c.count}`, `collview:${c.id}`)]),
+              [button("← Назад", "library:menu")],
+            ],
+          },
+          { edit: here },
+        );
+      } else await list("Останні", s.items(), here);
+      return;
+    }
+    if (action === "collview") {
+      const found = collection(s, parts[1]);
+      if (!found) notice = "Добірки вже немає.";
+      else
+        await list(
+          found.name,
+          memberIds(s, found.id).map((id) => ({ id })),
+          here,
+        );
       return;
     }
     if (action === "weekly") {
@@ -1228,6 +1308,26 @@ export async function handle(
       }
       case "states":
         await keyboardOnly(id, choices(id, statuses, "status"));
+        return;
+      case "colls":
+        await keyboardOnly(id, collectionChoices(s, id));
+        return;
+      case "coll": {
+        const found = collection(s, parts[1]);
+        if (!found) notice = "Добірки вже немає.";
+        else if (collectionsOf(s, id).includes(found.id)) {
+          removeFromCollection(s, found.id, id);
+          notice = `Прибрано з «${short(found.name, 30)}»`;
+        } else
+          notice = addToCollection(s, found.id, id)
+            ? `Додано в «${short(found.name, 30)}»`
+            : "Добірка заповнена";
+        await keyboardOnly(id, collectionChoices(s, id));
+        return;
+      }
+      case "collnew":
+        s.setContext({ mode: "collection", id, expires: until() });
+        await send("Як назвати добірку? Напр. «Дизайн мого застосунку».", dialogMenu);
         return;
       case "type":
         await keyboardOnly(id, choices(id, types, "settype"));

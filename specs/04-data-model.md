@@ -75,6 +75,7 @@ Draft вище — історичний; актуальна схема:
 - `enrichment` — сирі AI-відповіді за update, окремо від власних вражень.
 - `prompts` — повідомлення бота → item (для Reply) і стан рефлексії (pending / answered / skipped).
 - `events` — історія ручних змін status / reaction / type: item_id, field, old, new, at. Для аналітики (скільки чекало в «На потім», як змінювалась оцінка). Видаляється разом із записом. Зміни до 2026-11-05 не збереглися.
+- `collections`, `collection_items` — ручні добірки (експеримент 2026-11-09, див. [07-decisions.md](07-decisions.md)): назва добірки та пари (добірка, матеріал) з часом додавання. Матеріал видаляється з добірок разом із записом.
 - Службові: `updates`, `context`, `update_context` (маршрут незавершеного update), `vault_exports` / `vault_pending` (manifest експорту). У JSON snapshot не потрапляють; для повного backup потрібна SQLite і `data/covers/`.
 
 `PRAGMA user_version=3`. JSON snapshot має `schema_version: 3`.

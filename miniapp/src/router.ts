@@ -6,14 +6,23 @@ export type Route =
   | { screen: "entry"; section: "diary"; id: number }
   | { screen: "compose"; section: "diary" }
   | { screen: "material"; section: "media"; id: string }
+  | { screen: "collection"; section: "media"; id: string }
+  | { screen: "albums"; section: "media" }
+  | { screen: "album"; section: "media"; period: string }
   | { screen: "search"; section: "diary" | "ideas"; q: string };
 
-// #/diary, #/diary/new, #/diary/42, #/diary/search?q=слово, #/ideas, #/ideas/search?q=слово, #/media, #/media/<id>
+// #/diary, #/diary/new, #/diary/42, #/diary/search?q=слово, #/ideas, #/ideas/search?q=слово, #/media, #/media/<id>,
+// #/media/collection/<id>, #/media/albums, #/media/album/2026-11
 export function parse(hash: string): Route {
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?");
-  const [section, rest] = path.split("/");
+  const [section, rest, third] = path.split("/");
   if (section === "media") {
     try {
+      if (rest === "albums") return { screen: "albums", section };
+      if (rest === "album" && /^\d{4}-\d{2}$/.test(third ?? ""))
+        return { screen: "album", section, period: third };
+      if (rest === "collection" && third)
+        return { screen: "collection", section, id: decodeURIComponent(third) };
       return rest
         ? { screen: "material", section, id: decodeURIComponent(rest) }
         : { screen: "list", section };
@@ -36,6 +45,9 @@ export const searchHash = (section: "diary" | "ideas", q = "") =>
 export const composeHash = "#/diary/new";
 export const entryHash = (id: number) => `#/diary/${id}`;
 export const materialHash = (id: string) => `#/media/${encodeURIComponent(id)}`;
+export const collectionHash = (id: string) => `#/media/collection/${encodeURIComponent(id)}`;
+export const albumsHash = "#/media/albums";
+export const albumHash = (period: string) => `#/media/album/${period}`;
 export const sectionHash = (section: Section) => `#/${section}`;
 
 // The order of the tabs: swiping goes along it.
@@ -51,6 +63,12 @@ export function hashOf(route: Route): string {
       return composeHash;
     case "material":
       return materialHash(route.id);
+    case "collection":
+      return collectionHash(route.id);
+    case "albums":
+      return albumsHash;
+    case "album":
+      return albumHash(route.period);
     case "search":
       return searchHash(route.section, route.q);
   }
@@ -61,7 +79,10 @@ export const scrollKey = (route: Route) =>
   route.screen === "search" ? `#/${route.section}/search` : hashOf(route);
 
 // How deep a screen lies: moving to a deeper one slides in, to a shallower one slides out.
-export const depth = (route: Route) => (route.screen === "list" ? 0 : route.screen === "entry" ? 2 : 1);
+// A material is the deepest of the library, since it opens from a list, a collection or an album; a diary
+// entry is deeper than the album that links to it.
+const DEPTH: Partial<Record<Route["screen"], number>> = { list: 0, album: 2, entry: 3, material: 3 };
+export const depth = (route: Route) => DEPTH[route.screen] ?? 1;
 
 // The screens before this one, as the browser's history holds them: a swipe back has to show the screen
 // that "back" is going to land on. Every history entry is stamped with its place (`at`) as it is first

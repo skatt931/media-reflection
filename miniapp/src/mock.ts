@@ -1,7 +1,17 @@
 // Dev only (see api.ts): invented entries and ideas, answered by the same code as the server.
 // ?mock shows them; ?mock=empty, ?mock=error and ?mock=slow show the other states.
-import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "../../src/miniapp/data.ts";
+import type { Album, Shelf } from "../../src/miniapp/album-types.ts";
+import type { CollectionCard, CollectionView, Tile } from "../../src/miniapp/collection-types.ts";
+import {
+  diaryEntry,
+  diaryList,
+  ideaList,
+  snippet,
+  type DiaryRow,
+  type IdeaRow,
+} from "../../src/miniapp/data.ts";
 import type { LibraryCard, LibraryItem, LibraryList } from "../../src/miniapp/library-types.ts";
+import { stems } from "../../src/words.ts";
 import { NO_REACTION } from "../../src/miniapp/library-types.ts";
 import { ApiError } from "./api.ts";
 import { isoDate } from "./format.ts";
@@ -109,7 +119,14 @@ const ideas: IdeaRow[] = [
 }));
 
 const labels = {
-  types: { article: "Стаття", podcast: "Подкаст", video: "Відео", resource: "Ресурс", game: "Гра" },
+  types: {
+    article: "Стаття",
+    podcast: "Подкаст",
+    video: "Відео",
+    resource: "Ресурс",
+    game: "Гра",
+    music_album: "Альбом",
+  },
   statuses: { saved: "На потім", in_progress: "У процесі", consumed: "Ознайомився", finished: "Завершено" },
   reactions: {
     loved: "Улюблене",
@@ -148,10 +165,50 @@ const material = (
   description: null,
   entities: [],
   impressions: notes.map(([n, body]) => ({ date: daysAgo(n), body })),
+  collections: [],
+  thought: notes.length ? { body: notes.at(-1)![1], date: daysAgo(notes.at(-1)![0]), hit: false } : null,
   labels,
 });
 
 const library: LibraryItem[] = [
+  material(
+    2,
+    "Yol",
+    "music_album",
+    "Altin Gün",
+    "music.example",
+    "consumed",
+    "loved",
+    ["psychedelic", "турецька музика"],
+    [
+      [
+        2,
+        "Слухав усю дорогу додому й вперше за місяць нікуди не поспішав. Бас тут такий, що його видно, а не лише чутно.",
+      ],
+    ],
+  ),
+  material(
+    4,
+    "Lullaby: осінь у кімнаті",
+    "music_album",
+    "Нічний двір",
+    "music.example",
+    "consumed",
+    "loved",
+    ["осінь", "ambient"],
+    [[4, "Це про осінню атмосферу: вікно, чайник і дощ, який нічого від тебе не вимагає."]],
+  ),
+  material(
+    6,
+    "Як анімації оживляють інтерфейс",
+    "video",
+    "Motion Notes",
+    "video.example",
+    "consumed",
+    "loved",
+    ["анімації", "дизайн"],
+    [[6, "Я одразу спробував використати те що побачив в своєму боті."]],
+  ),
   material(
     1,
     "Повільний дизайн: навіщо інтерфейсам пауза",
@@ -223,6 +280,7 @@ function mockLibrary(url: URL): LibraryList {
   const list = (key: string) => (url.searchParams.get(key) ?? "").split(",").filter(Boolean);
   const [types, statuses, reactions] = [list("type"), list("status"), list("reaction")];
   const q = (url.searchParams.get("q") ?? "").toLowerCase();
+  const terms = q ? stems(q) : [];
   const rows = mode === "empty" ? [] : library;
   const items = rows
     .filter(
@@ -238,7 +296,13 @@ function mockLibrary(url: URL): LibraryList {
         (url.searchParams.get("unreviewed") !== "1" || m.unreviewed) &&
         (url.searchParams.get("nothought") !== "1" || m.noThought),
     )
-    .map(card);
+    .map(card)
+    .map((c) => {
+      const hit = terms.length && c.thought ? snippet(c.thought.body, terms) : null;
+      return hit && c.thought && fold(c.thought.body).includes(terms[0])
+        ? { ...c, thought: { ...c.thought, body: hit, hit: true } }
+        : c;
+    });
   const counts: LibraryList["counts"] = { saved: 0, unreviewed: 0, noThought: 0, types: {} };
   for (const m of rows) {
     if (m.status === "saved") counts.saved++;
@@ -246,7 +310,80 @@ function mockLibrary(url: URL): LibraryList {
     if (m.noThought) counts.noThought++;
     counts.types[m.type] = (counts.types[m.type] ?? 0) + 1;
   }
-  return { items, total: rows.length, counts, labels };
+  return { items, terms, total: rows.length, counts, labels };
+}
+
+// Collections, the album and the shelf, answered from the invented library (dev only).
+const sets: { id: string; name: string; members: string[] }[] = [
+  { id: "design", name: "Дизайн мого застосунку", members: ["m1", "m5", "m6"] },
+  { id: "talk", name: "Для виступу про AI slop", members: ["m9"] },
+];
+const fold = (text: string) => text.toLowerCase();
+const tileOf = (m: LibraryItem): Tile => ({ id: m.id, title: m.title, cover: m.cover });
+const inSets = () => {
+  for (const m of library) m.collections = sets.filter((c) => c.members.includes(m.id)).map((c) => c.id);
+};
+inSets();
+const setCard = (c: (typeof sets)[number]): CollectionCard => {
+  const rows = c.members.flatMap((id) => library.find((m) => m.id === id) ?? []);
+  return { id: c.id, name: c.name, count: rows.length, tiles: rows.slice(0, 4).map(tileOf) };
+};
+const setView = (c: (typeof sets)[number]): CollectionView => ({
+  ...setCard(c),
+  items: c.members.flatMap((id) => library.find((m) => m.id === id) ?? []).map(card),
+  labels,
+});
+
+const flatText = (text: string) => text.replace(/\s+/g, " ").trim();
+function mockAlbum(period: string): Album | null {
+  const items = library.filter((m) => m.date.startsWith(period));
+  if (!items.length) return null;
+  const loved = items.filter((m) => m.reaction === "loved");
+  const notes = items.flatMap((m) => m.impressions.map((n) => ({ m, n })));
+  const entries = diary.filter((d) => d.entry_date.startsWith(period));
+  const months = [...new Set(library.map((m) => m.date.slice(0, 7)))].sort().reverse();
+  const at = months.indexOf(period);
+  const done = period < isoDate(new Date()).slice(0, 7);
+  return {
+    period,
+    done,
+    counts: { saved: items.length, loved: loved.length, thoughts: notes.length, diary: entries.length },
+    loved: loved.map(tileOf),
+    slots: done ? loved.length : Math.max(6, Math.ceil((loved.length + 1) / 3) * 3),
+    quotes: notes
+      .filter(({ n }) => n.body.length >= 25)
+      .map(({ m, n }) => ({ id: m.id, title: m.title, body: n.body, date: n.date })),
+    diary: entries.map((d) => ({
+      id: d.id,
+      date: d.entry_date,
+      excerpt: flatText(d.body)
+        .split(/(?<=[.!?…])\s/)[0]
+        .slice(0, 140),
+    })),
+    older: months[at + 1] ?? null,
+    newer: months[at - 1] ?? null,
+  };
+}
+const mockFaces = (period: string) =>
+  library
+    .filter((m) => m.date.startsWith(period))
+    .slice(0, 4)
+    .map(tileOf);
+function mockShelf(): Shelf {
+  const months = [...new Set(library.map((m) => m.date.slice(0, 7)))].sort().reverse();
+  return {
+    albums: months.flatMap((period) => {
+      const a = mockAlbum(period)!;
+      return {
+        period,
+        done: a.done,
+        saved: a.counts.saved,
+        loved: a.counts.loved,
+        thoughts: a.counts.thoughts,
+        tiles: a.loved.length || !a.done ? a.loved.slice(0, 4) : mockFaces(period),
+      };
+    }),
+  };
 }
 
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -265,6 +402,13 @@ export async function mockGet<T>(path: string): Promise<T> {
   else if (entry) body = diaryEntry(rows, Number(entry[1]));
   else if (url.pathname === "/api/ideas") body = ideaList(quick, q);
   else if (url.pathname === "/api/library") body = mockLibrary(url);
+  else if (url.pathname === "/api/collections")
+    body = { collections: (mode === "empty" ? [] : sets).map(setCard) };
+  else if (url.pathname.startsWith("/api/collections/")) {
+    const found = sets.find((c) => c.id === decodeURIComponent(url.pathname.slice(17)));
+    body = found && setView(found);
+  } else if (url.pathname === "/api/albums") body = mockShelf();
+  else if (url.pathname.startsWith("/api/albums/")) body = mockAlbum(url.pathname.slice(12));
   else if (url.pathname.startsWith("/api/library/"))
     body = library.find((m) => m.id === decodeURIComponent(url.pathname.slice(13)));
   if (!body) throw new ApiError(404);
@@ -300,6 +444,28 @@ export async function mockSend<T>(method: string, path: string, body: unknown): 
     }
     row.resolved_at = idea[2] === "resolve" ? now.toISOString() : null;
     return true as T;
+  }
+  if (url.pathname === "/api/collections" && method === "POST") {
+    if (sets.some((c) => c.name.toLowerCase() === String(input.name).trim().toLowerCase()))
+      throw new ApiError(400);
+    const id = `c${sets.length + 1}`;
+    sets.unshift({ id, name: String(input.name).trim(), members: [] });
+    return { id } as T;
+  }
+  const coll = /^\/api\/collections\/([^/]+)(?:\/(delete|items|remove))?$/.exec(url.pathname);
+  if (coll) {
+    const found = sets.find((c) => c.id === decodeURIComponent(coll[1]));
+    if (!found) throw new ApiError(404);
+    if (coll[2] === "delete") {
+      sets.splice(sets.indexOf(found), 1);
+      inSets();
+      return true as T;
+    }
+    if (coll[2] === "items" && !found.members.includes(input.itemId)) found.members.unshift(input.itemId);
+    if (coll[2] === "remove") found.members = found.members.filter((id) => id !== input.itemId);
+    if (!coll[2]) found.name = String(input.name).trim();
+    inSets();
+    return setView(found) as T;
   }
   const item = /^\/api\/library\/([^/]+?)(\/impressions)?$/.exec(url.pathname);
   const material = item && library.find((m) => m.id === decodeURIComponent(item[1]));

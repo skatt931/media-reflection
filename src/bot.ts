@@ -6,7 +6,7 @@ import { exportVault, type ExportReport } from "./vault.ts";
 import type { Metadata } from "./metadata.ts";
 import type { Transcribe } from "./voice.ts";
 import { findUrl } from "./links.ts";
-import { JournalStore, parseDiaryDate } from "./journal.ts";
+import { JournalStore, parseDiaryDate, type IdeaSource } from "./journal.ts";
 import { breakdown, review, slideText, validPeriod, previousPeriod, type Review } from "./stats.ts";
 
 export type Out = {
@@ -17,6 +17,8 @@ export type Out = {
   photo?: { path: string; fileId?: string; onUpload?: (fileId: string) => void };
   // Deliver without a notification sound.
   silent?: boolean;
+  // Instead of a message, react to this one of the owner's messages; `text` is the fallback when reactions fail.
+  react?: number;
 };
 export type Send = (text: string, keyboard?: any, out?: Out) => Promise<number>;
 export type Services = {
@@ -185,6 +187,25 @@ export async function diaryAutosave(s: Store, journal: JournalStore, send: Send,
   await send(`Година без нових повідомлень. ${diarySaved(entry)}`, diaryUndo(entry.id), { silent: true });
 }
 
+const ideaContext = () => ({ mode: "idea", expires: Date.now() + TTL });
+function ideaCard(journal: JournalStore, idea: Record<string, any>) {
+  const count = journal.ideaCount();
+  const keyboard: any[][] = [];
+  if (count > 1) {
+    const newer = journal.ideaStep(idea.id, "newer").id;
+    const older = journal.ideaStep(idea.id, "older").id;
+    keyboard.push([button("←", `idea:open:${newer}`), button("→", `idea:open:${older}`)]);
+  }
+  keyboard.push([button("Видалити", `idea:del:${idea.id}`)]);
+  return {
+    text:
+      `Ідеї · ${journal.ideaPosition(idea.id)}/${count}\n` +
+      `${diaryDay(idea.idea_date)} ${idea.idea_time}${idea.source === "voice" ? " 🎤" : ""}\n\n` +
+      short(idea.body, 3800),
+    keyboard: { inline_keyboard: keyboard },
+  };
+}
+
 const ago = (days: number) => {
   if (days <= 0) return "сьогодні";
   if (days === 1) return "вчора";
@@ -201,6 +222,8 @@ export const commands = [
   { command: "help", description: "Як користуватися" },
   { command: "list", description: "Останні записи" },
   { command: "diary", description: "Записати щоденник" },
+  { command: "idea", description: "Записати ідею (/idea текст)" },
+  { command: "ideas", description: "Список ідей" },
   { command: "later", description: "На потім" },
   { command: "reflect", description: "Без вражень" },
   { command: "ask", description: "Пошук по збереженому" },
@@ -274,6 +297,16 @@ const help: Record<string, { title: string; text: string }> = {
       "• Голосові: бот питає, чи розпізнавати, бо аудіо піде в Groq (сторонній сервіс).\n" +
       "• Після збереження «Скасувати запис» видаляє його.\n" +
       "• Це окремо від медіатеки: не потрапляє в підсумки й пошук.",
+  },
+  ideas: {
+    title: "Ідеї",
+    text:
+      "/idea текст — записати ідею одним рядком, бот відповість реакцією 👌. Без діалогу й підтверджень.\n\n" +
+      "• /idea без тексту — наступне повідомлення (текст або голосове) стане ідеєю.\n" +
+      "• Голосове розпізнається Groq (аудіо йде в сторонній сервіс).\n" +
+      "• /ideas — список від нових до старих, гортай ← →, «Видалити» — з підтвердженням.\n" +
+      "• Раз на тиждень npm run journal:pull на Mac кладе кожну ідею окремим файлом у Journal/Ideas/Inbox в Obsidian.\n" +
+      "• Це окремо від медіатеки й щоденника: не потрапляє в підсумки, «Без вражень» і пошук.",
   },
   reviews: {
     title: "Підсумки",
@@ -807,6 +840,82 @@ export async function handle(
     }
   }
 
+  // An idea is one line without a dialogue: saved at once, answered with a reaction on the message itself.
+  async function ideaSave(text: string, source: IdeaSource) {
+    journal!.addIdea({ body: text, source, date: localDate(at), time: localTime(at), update: u.update_id });
+    s.setContext(null);
+    await send("✓", undefined, { react: m.message_id, silent: true });
+  }
+  async function ideaVoice(voice: any) {
+    if (!services.transcribe) {
+      await send("Для голосових потрібен Groq: npm run setup:groq. Ідею не збережено.", menu);
+      return;
+    }
+    if (voice.file_size > 20_000_000) {
+      await send("Запис завеликий, максимум 20 МБ.", menu);
+      return;
+    }
+    const key = `voice:${u.update_id}`;
+    const text = s.value(key) ?? (await services.transcribe(voice.file_id));
+    if (!text) {
+      await send("Не вдалося розпізнати голос. Надішли ще раз або «Скасувати».", dialogMenu);
+      return;
+    }
+    s.setValue(key, text);
+    await send(`🎤 ${short(text, 1000)}`);
+    await ideaSave(text, "voice");
+  }
+  async function ideaOpen(rest: string) {
+    if (!journal) {
+      await send("Ідеї не підключено.", menu);
+      return;
+    }
+    if (rest) {
+      await ideaSave(rest, "text");
+      return;
+    }
+    s.setContext(ideaContext());
+    await send("Надішли ідею наступним повідомленням: текстом або голосовим.", dialogMenu);
+  }
+  async function ideaShow(idea: Record<string, any> | undefined, edit?: Out["edit"]) {
+    if (!idea) {
+      await send("Ідей поки немає. /idea текст — записати.", edit ? undefined : menu, { edit });
+      return;
+    }
+    const card = ideaCard(journal!, idea);
+    await send(card.text, card.keyboard, { edit });
+  }
+  async function ideaCallback(parts: string[]) {
+    const j = journal;
+    if (!j || !here) return;
+    const idea = j.idea(Number(parts[2]));
+    if (parts[1] === "open") {
+      await ideaShow(idea ?? j.newestIdea(), here);
+      return;
+    }
+    if (!idea) {
+      await send("Цієї ідеї вже немає.", undefined, { edit: here });
+      return;
+    }
+    if (parts[1] === "del")
+      await send(
+        `Видалити ідею? Повернути її не вийде.\n\n${short(idea.body, 300)}`,
+        {
+          inline_keyboard: [
+            [button("Так, видалити", `idea:rm:${idea.id}`)],
+            [button("Залишити", `idea:open:${idea.id}`)],
+          ],
+        },
+        { edit: here },
+      );
+    else if (parts[1] === "rm") {
+      const next = j.ideaStep(idea.id, "older");
+      j.removeIdea(idea.id);
+      await ideaShow(next.id === idea.id ? undefined : j.idea(next.id), here);
+      notice = "Видалено";
+    }
+  }
+
   async function onText(text: string) {
     const replyTo = m.reply_to_message?.message_id;
     const paged = pagerOf(replyTo);
@@ -849,6 +958,17 @@ export async function handle(
       }
       if (text !== null && !text.startsWith("/") && !menuTexts.has(text.trim())) {
         await diaryText(text.trim());
+        return;
+      }
+    }
+    // The next message after a bare /idea is the idea itself.
+    if (active?.mode === "idea" && journal) {
+      if (text === null && voice) {
+        await ideaVoice(voice);
+        return;
+      }
+      if (text !== null && text.trim() && !text.startsWith("/") && !menuTexts.has(text.trim())) {
+        await ideaSave(text.trim(), "text");
         return;
       }
     }
@@ -914,7 +1034,12 @@ export async function handle(
       if (!validPeriod(period)) await send("Формат: /review, /review 2026-10 або /review 2026.", menu);
       else await showReview(period);
     } else if (cmd === "/diary") await diaryOpen(text.replace(/^\S+/, "").trim());
-    else if (cmd === "/enrich") await enrich();
+    else if (cmd === "/idea") await ideaOpen(text.replace(/^\S+/, "").trim());
+    else if (cmd === "/ideas") {
+      s.setContext(null);
+      if (!journal) await send("Ідеї не підключено.", menu);
+      else await ideaShow(journal.newestIdea());
+    } else if (cmd === "/enrich") await enrich();
     else if (text === "Експорт" || cmd === "/export") {
       s.setContext(null);
       try {
@@ -960,6 +1085,10 @@ export async function handle(
     }
     if (action === "diary") {
       await diaryCallback(parts);
+      return;
+    }
+    if (action === "idea") {
+      await ideaCallback(parts);
       return;
     }
     if (action === "bytype") {

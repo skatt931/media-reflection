@@ -124,6 +124,8 @@ body {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  /* A field focused on a pane that is still off to the side must not scroll the stage to reach it. */
+  overflow: clip;
 }
 .pane {
   position: absolute;

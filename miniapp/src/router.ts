@@ -38,7 +38,7 @@ export const materialHash = (id: string) => `#/media/${encodeURIComponent(id)}`;
 export const sectionHash = (section: Section) => `#/${section}`;
 
 // The order of the tabs: swiping goes along it.
-export const ORDER: Section[] = ["diary", "media", "ideas"];
+export const ORDER: Section[] = ["ideas", "media", "diary"];
 
 export function hashOf(route: Route): string {
   switch (route.screen) {
@@ -61,6 +61,40 @@ export const scrollKey = (route: Route) =>
 
 // How deep a screen lies: moving to a deeper one slides in, to a shallower one slides out.
 export const depth = (route: Route) => (route.screen === "list" ? 0 : route.screen === "entry" ? 2 : 1);
+
+// The screens before this one, as the browser's history holds them: a swipe back has to show the screen
+// that "back" is going to land on. Every history entry is stamped with its place (`at`) as it is first
+// reached, so a step back or forward is told from a new step. `oldURL` carries the address as it was left,
+// including a search query that was written over it.
+const trail = new Map<number, Route>();
+let at = 0;
+let replacing = false;
+const stamped = () => (history.state as { at?: number } | null)?.at;
+if (typeof window !== "undefined") {
+  at = stamped() ?? 0;
+  history.replaceState({ ...history.state, at }, "");
+  trail.set(at, parse(location.hash));
+  window.addEventListener("hashchange", (e) => {
+    const placed = stamped();
+    if (typeof placed === "number") at = placed;
+    else {
+      if (!replacing) trail.set(at, parse(new URL(e.oldURL).hash));
+      at += replacing ? 0 : 1;
+      history.replaceState({ ...history.state, at }, "");
+    }
+    replacing = false;
+    trail.set(at, parse(location.hash));
+  });
+}
+
+// The screen "back" returns to, when this session has seen it.
+export const before = (): Route | undefined => trail.get(at - 1);
+
+// Swaps the current screen for another one in the history, so "back" skips it.
+export function replaceHash(hash: string) {
+  replacing = true;
+  location.replace(hash);
+}
 
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parse(location.hash));

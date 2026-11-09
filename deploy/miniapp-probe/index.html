@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Media Reflection — перевірка Mini App</title>
+    <!-- Тимчасова сторінка для issue #4: чи відкривається Mini App через tailscale serve. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        font:
+          16px/1.5 -apple-system,
+          system-ui,
+          sans-serif;
+        background: var(--tg-theme-bg-color, #fff);
+        color: var(--tg-theme-text-color, #000);
+      }
+      h1 {
+        font-size: 20px;
+      }
+      dt {
+        color: var(--tg-theme-hint-color, #888);
+        font-size: 13px;
+      }
+      dd {
+        margin: 0 0 12px;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="status">Перевірка…</h1>
+    <dl id="facts"></dl>
+    <script>
+      const app = window.Telegram?.WebApp;
+      const inTelegram = Boolean(app?.initData);
+      document.getElementById("status").textContent = inTelegram
+        ? "✅ Mini App відкрився в Telegram"
+        : "⚠️ Сторінка відкрита, але не з Telegram (initData порожній)";
+      const user = app?.initDataUnsafe?.user;
+      const facts = {
+        "Клієнт (platform)": app?.platform ?? "—",
+        "Версія Bot API у клієнті": app?.version ?? "—",
+        Тема: app?.colorScheme ?? "—",
+        "initData, символів": app?.initData?.length ?? 0,
+        // Лише для показу: справжня перевірка підпису буде на сервері (issue #10).
+        "Користувач (не перевірено)": user ? `${user.id} ${user.first_name ?? ""}` : "—",
+        Адреса: location.host,
+      };
+      const list = document.getElementById("facts");
+      for (const [name, value] of Object.entries(facts)) {
+        const dt = document.createElement("dt");
+        dt.textContent = name;
+        const dd = document.createElement("dd");
+        dd.textContent = String(value);
+        list.append(dt, dd);
+      }
+      app?.ready();
+      if (inTelegram) {
+        app.MainButton.setText("Закрити");
+        app.MainButton.onClick(() => app.close());
+        app.MainButton.show();
+      }
+    </script>
+  </body>
+</html>

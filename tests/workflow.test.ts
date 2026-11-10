@@ -105,6 +105,8 @@ test("ask mode remembers followups and never captures queries; export is explici
         zip: null,
         notes: 0,
         covers: 0,
+        diary: 0,
+        ideas: 0,
         left: 0,
         changed: [],
         deleted: [],

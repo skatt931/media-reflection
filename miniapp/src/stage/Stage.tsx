@@ -398,6 +398,11 @@ export function Stage({
       const dx = e.clientX - d.x0;
       const dy = e.clientY - d.y0;
       if (!d.locked) {
+        // A finger dragging the handles of selected text is not a swipe.
+        if (!window.getSelection()?.isCollapsed) {
+          drag.current = null;
+          return;
+        }
         // Vertical intent: the page scrolls and the swipe stays out of it.
         if (Math.abs(dy) > LOCK && Math.abs(dy) > Math.abs(dx)) {
           drag.current = null;

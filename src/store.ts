@@ -51,6 +51,8 @@ export class Store {
    CREATE TABLE IF NOT EXISTS enrichment(update_id INTEGER PRIMARY KEY, item_id TEXT REFERENCES items(id), payload TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS vault_pending(vault TEXT NOT NULL,item_id TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(vault,item_id));
    CREATE TABLE IF NOT EXISTS vault_exports(vault TEXT NOT NULL,item_id TEXT NOT NULL,path TEXT NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(vault,item_id));
+   CREATE TABLE IF NOT EXISTS export_notes(item_id TEXT PRIMARY KEY, path TEXT NOT NULL, hash TEXT NOT NULL, cover TEXT, title TEXT NOT NULL, exported_at TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS export_changes(item_id TEXT NOT NULL, kind TEXT NOT NULL, hash TEXT NOT NULL, title TEXT NOT NULL, detected_at TEXT NOT NULL, PRIMARY KEY(item_id,kind,hash));
    CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, item_id TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT, at TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS collection_items(collection_id TEXT NOT NULL, item_id TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY(collection_id,item_id));`);
@@ -75,6 +77,28 @@ export class Store {
       });
     }
     this.fixLegacyRows();
+    this.seedExports();
+  }
+  // Notes exported before the archive export (tracked per vault in `vault_exports`) count as already delivered.
+  private seedExports() {
+    const rows = this.all(
+      "SELECT item_id,path,hash FROM vault_exports WHERE substr(item_id,1,2)<>'__' AND item_id NOT IN (SELECT item_id FROM export_notes)",
+    );
+    if (!rows.length) return;
+    this.transaction(() => {
+      for (const row of rows) {
+        const file = String(row.path).split("/").at(-1)!;
+        this.run(
+          "INSERT OR IGNORE INTO export_notes VALUES (?,?,?,?,?,?)",
+          row.item_id,
+          file,
+          row.hash,
+          this.item(row.item_id)?.cover ?? null,
+          file.replace(/ — [^ ]+\.md$/, ""),
+          "до архівного експорту",
+        );
+      }
+    });
   }
   all(sql: string, ...args: any[]): Row[] {
     return this.db.prepare(sql).all(...args) as Row[];

@@ -5,7 +5,7 @@ import { createGroq, createJSONRequest } from "./groq.ts";
 import { createSearch } from "./search.ts";
 import { fetchImage, fetchMetadata } from "./metadata.ts";
 import { createTranscriber } from "./voice.ts";
-import { exportVault } from "./vault.ts";
+import { buildExport } from "./export-package.ts";
 import type { Services } from "./bot.ts";
 
 export function createRuntime(
@@ -31,7 +31,7 @@ export function createRuntime(
       env.VOICE_LANGUAGE ?? "uk",
       transport,
     ),
-    export: () => exportVault(store, env.OBSIDIAN_VAULT_PATH ?? ""),
+    export: () => buildExport(store),
   };
   return { ai: createGroq(env.GROQ_API_KEY, env.GROQ_MODEL, transport), services };
 }

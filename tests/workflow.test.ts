@@ -101,13 +101,14 @@ test("ask mode remembers followups and never captures queries; export is explici
     export: () => {
       exports++;
       return {
-        created: 0,
-        updated: 0,
-        unchanged: 0,
-        conflicts: [],
-        overviewConflict: false,
-        removed: 0,
-        kept: [],
+        name: "export.zip",
+        zip: null,
+        notes: 0,
+        covers: 0,
+        left: 0,
+        changed: [],
+        deleted: [],
+        commit() {},
       };
     },
   };

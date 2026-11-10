@@ -18,7 +18,7 @@ import { types, statuses, reactions, localDate } from "./fields.ts";
 import { review, reviewMarkdown, periods, periodTitle, displayTitle } from "./stats.ts";
 export const personalMarker = "<!-- media-reflection:personal -->";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
-const safeName = (text: string) =>
+export const safeName = (text: string) =>
   text
     .replace(/[\x00-\x1f<>:"/\\|?*\[\]#^]/g, " ")
     .replace(/\s+/g, " ")
@@ -45,7 +45,7 @@ function securePath(root: string, path: string) {
       throw Error("Символічні посилання (symlink) у шляху експорту заборонені.");
   }
 }
-function renderNote(s: Store, id: string, cover: string | null) {
+export function renderNote(s: Store, id: string, cover: string | null) {
   const item = s.item(id)!;
   const properties = {
     media_reflection_id: id,

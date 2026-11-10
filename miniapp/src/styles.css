@@ -301,6 +301,12 @@ body {
 .reader {
   padding: 10px 6px 0;
 }
+/* What was written can be held and copied; the app around it is not text. */
+.reader p,
+.reader h1 {
+  user-select: text;
+  -webkit-user-select: text;
+}
 .kicker {
   font-size: 14px;
   color: var(--faint);
@@ -454,6 +460,8 @@ body {
   font-size: 16.5px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* states */

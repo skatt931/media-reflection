@@ -442,3 +442,39 @@ export function exportIdeas(store: JournalStore, dir: string, dryRun = false): E
   }
   return report;
 }
+
+export type PendingNote = { kind: "diary" | "idea"; id: number; name: string; body: string };
+
+// Bot entries and ideas that have no export name yet, with the names they would get. Nothing is written or
+// recorded, so the caller can deliver them (Telegram) first and call `markExported` only if that worked.
+export function pendingNotes(store: JournalStore, dir: string, ideasDir: string): PendingNote[] {
+  const diary = store.all(
+    "SELECT id, body FROM journal_entries WHERE source='bot' AND export_name IS NULL ORDER BY entry_date, id",
+  );
+  const ideas = store.all("SELECT id, body FROM ideas WHERE export_name IS NULL ORDER BY id");
+  // The dry run lists the new names in the same order as the rows above.
+  const named = [exportJournal(store, dir, true).named, exportIdeas(store, ideasDir, true).named];
+  return [
+    ...diary.map((row, i) => ({ kind: "diary" as const, id: row.id, name: named[0][i], body: row.body })),
+    ...ideas.map((row, i) => ({ kind: "idea" as const, id: row.id, name: named[1][i], body: row.body })),
+  ];
+}
+
+// Records the names and writes the files into the export folders, so `journal:pull` sees them as taken too.
+// A row named in the meantime is left alone.
+export function markExported(store: JournalStore, notes: PendingNote[], dir: string, ideasDir: string) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  mkdirSync(ideasDir, { recursive: true, mode: 0o700 });
+  store.transaction(() => {
+    for (const note of notes) {
+      const table = note.kind === "diary" ? "journal_entries" : "ideas";
+      const named = store.run(
+        `UPDATE ${table} SET export_name=? WHERE id=? AND export_name IS NULL`,
+        note.name,
+        note.id,
+      );
+      const path = join(note.kind === "diary" ? dir : ideasDir, note.name);
+      if (named.changes && !existsSync(path)) writeFileSync(path, note.body, { flag: "wx" });
+    }
+  });
+}

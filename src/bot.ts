@@ -1157,7 +1157,7 @@ export async function handle(
     else if (text === "Експорт" || cmd === "/export") {
       s.setContext(null);
       try {
-        const pkg = (services.export ?? (() => buildExport(s)))();
+        const pkg = (services.export ?? (() => buildExport(s, { journal: services.journal })))();
         const shown = (titles: string[]) => titles.slice(0, 5).join(", ") + (titles.length > 5 ? "…" : "");
         const changes =
           (pkg.changed.length
@@ -1168,7 +1168,7 @@ export async function handle(
             : "");
         if (pkg.zip) {
           const caption =
-            `Експорт: нових нотаток ${pkg.notes}, обкладинок ${pkg.covers}. Розпакуй у vault.` +
+            `Експорт: щоденник ${pkg.diary}, ідей ${pkg.ideas}, нотаток ${pkg.notes}, обкладинок ${pkg.covers}. Розпакуй у vault.` +
             (pkg.left ? `\nЛишилось ще ${pkg.left} — натисни «Експорт» знову.` : "");
           await send(caption, menu, { document: { name: pkg.name, bytes: pkg.zip } });
           // Only a file Telegram has accepted counts as exported.

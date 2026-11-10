@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { Store } from "../src/store.ts";
+import { JournalStore } from "../src/journal.ts";
 import { buildExport } from "../src/export-package.ts";
 import { handle } from "../src/bot.ts";
 import { zip } from "../src/zip.ts";
@@ -166,9 +167,40 @@ test("the bot commits an export only after the file is sent", async () => {
   };
   await handle(s, msg(2, "Експорт"), 42, working);
   assert.equal(documents.length, 1);
-  assert.match(documents[0].t, /нових нотаток 1/);
+  assert.match(documents[0].t, /нотаток 1/);
   assert.equal(s.all("SELECT * FROM export_notes").length, 1);
   await handle(s, msg(3, "Експорт"), 42, working);
   assert.match(sent.at(-1), /Нових записів для експорту немає/);
   s.close();
+});
+
+test("new diary entries and ideas go into the same archive, once, and imported ones never", () => {
+  const dir = mkdtempSync(join(tmpdir(), "export-journal-"));
+  try {
+    const s = new Store(":memory:");
+    const journal = new JournalStore(":memory:");
+    const options = { journal, journalDir: join(dir, "diary"), ideasDir: join(dir, "ideas") };
+    journal.add({ date: "2026-11-01", body: "Давній запис", source: "import", sourceName: "01.11.26.md" });
+    journal.add({ date: "2026-11-09", body: "Вчорашній запис", source: "bot" });
+    journal.addIdea({ body: "Ідея", source: "text", date: "2026-11-09", time: "14:30" });
+    const first = buildExport(s, options);
+    assert.equal(first.diary, 1);
+    assert.equal(first.ideas, 1);
+    const files = unzip(first.zip!);
+    assert.equal(files.get("Journal/09.11.26.md")!.toString(), "Вчорашній запис");
+    assert.equal(files.get("Journal/Ideas/Inbox/09.11.26 14-30.md")!.toString(), "Ідея");
+    assert.equal(files.size, 2);
+    // Not delivered until committed.
+    assert.equal(buildExport(s, options).diary, 1);
+    first.commit();
+    assert.equal(buildExport(s, options).zip, null);
+    // The folders `journal:pull` reads now hold the files too, so it will not take them twice.
+    assert.ok(readdirSync(join(dir, "diary")).includes("09.11.26.md"));
+    journal.add({ date: "2026-11-09", body: "Другий за день", source: "bot" });
+    assert.ok(unzip(buildExport(s, options).zip!).has("Journal/09.11.26 (2).md"));
+    s.close();
+    journal.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

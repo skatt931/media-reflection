@@ -4,6 +4,7 @@ import { basename } from "node:path";
 import { Store } from "./store.ts";
 import { localDate } from "./fields.ts";
 import { personalMarker, renderNote, safeName } from "./vault.ts";
+import { markExported, pendingNotes, type JournalStore } from "./journal.ts";
 import { zip, type ZipFile } from "./zip.ts";
 
 // Telegram lets a bot send files up to 50 MB; stay well below it.
@@ -15,6 +16,9 @@ export type ExportPackage = {
   zip: Buffer | null;
   notes: number;
   covers: number;
+  // New diary entries and ideas in the archive.
+  diary: number;
+  ideas: number;
   // New items that did not fit into this archive; the next export takes them.
   left: number;
   // Already exported items whose note would look different now. They are not sent again.
@@ -25,9 +29,23 @@ export type ExportPackage = {
   commit(): void;
 };
 
-// New notes and covers since the previous export, as one archive that unpacks into the vault.
+export type ExportOptions = {
+  journal?: JournalStore;
+  // Where the diary and ideas are remembered as exported (the same folders `journal:export` uses).
+  journalDir?: string;
+  ideasDir?: string;
+  now?: Date;
+};
+// Where the diary and ideas land in the vault; the same folders `journal:pull` copies into.
+const DIARY_FOLDER = "Journal";
+const IDEAS_FOLDER = "Journal/Ideas/Inbox";
+
+// New notes, covers, diary entries and ideas since the previous export, as one archive that unpacks into the vault.
 // Notes exported earlier are never sent again; ones that changed afterwards are only recorded (`export_changes`).
-export function buildExport(s: Store, now = new Date()): ExportPackage {
+export function buildExport(s: Store, options: ExportOptions = {}): ExportPackage {
+  const now = options.now ?? new Date();
+  const journalDir = options.journalDir ?? (process.env.JOURNAL_EXPORT_DIR || "./data/journal-export");
+  const ideasDir = options.ideasDir ?? (process.env.IDEAS_EXPORT_DIR || "./data/ideas-export");
   const at = now.toISOString();
   const done = new Map(s.all("SELECT * FROM export_notes").map((row) => [row.item_id as string, row]));
   const files: ZipFile[] = [];
@@ -38,6 +56,16 @@ export function buildExport(s: Store, now = new Date()): ExportPackage {
   let covers = 0;
   let left = 0;
   let size = 0;
+  // The diary comes first: it matters most and always fits.
+  const pending = options.journal ? pendingNotes(options.journal, journalDir, ideasDir) : [];
+  for (const note of pending) {
+    const entry = {
+      name: `${note.kind === "diary" ? DIARY_FOLDER : IDEAS_FOLDER}/${note.name}`,
+      data: note.body,
+    };
+    files.push(entry);
+    size += Buffer.byteLength(note.body);
+  }
   const live = new Set<string>();
   const record = (id: string, kind: string, digest: string, title: string) =>
     s.run("INSERT OR IGNORE INTO export_changes VALUES (?,?,?,?,?)", id, kind, digest, title, at);
@@ -90,6 +118,8 @@ export function buildExport(s: Store, now = new Date()): ExportPackage {
     zip: files.length ? zip(files, now) : null,
     notes,
     covers,
+    diary: pending.filter((n) => n.kind === "diary").length,
+    ideas: pending.filter((n) => n.kind === "idea").length,
     left,
     changed,
     deleted,
@@ -106,6 +136,7 @@ export function buildExport(s: Store, now = new Date()): ExportPackage {
             at,
           );
       });
+      if (options.journal) markExported(options.journal, pending, journalDir, ideasDir);
     },
   };
 }

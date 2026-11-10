@@ -81,6 +81,16 @@ async function sendPhoto(text: string, keyboard: unknown, out: NonNullable<Param
   return sent;
 }
 
+async function sendDocument(text: string, keyboard: unknown, out: NonNullable<Parameters<Send>[2]>) {
+  const document = out.document!;
+  const form = new FormData();
+  form.append("chat_id", String(owner));
+  form.append("caption", clip(text, 1024));
+  if (keyboard) form.append("reply_markup", JSON.stringify(keyboard));
+  form.append("document", new Blob([new Uint8Array(document.bytes)]), document.name);
+  return api("sendDocument", form);
+}
+
 const send: Send = async (text, keyboard, out = {}) => {
   if (out.react) {
     try {
@@ -111,6 +121,7 @@ const send: Send = async (text, keyboard, out = {}) => {
       // The message can no longer be edited: send the same content as a new one.
     }
   }
+  if (out.document) return (await sendDocument(text, keyboard, out)).message_id;
   if (out.photo) {
     try {
       return (await sendPhoto(text, keyboard, out)).message_id;

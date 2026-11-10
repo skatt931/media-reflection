@@ -122,7 +122,13 @@ const LIBRARY_ID = /^\/api\/library\/([^/]+?)(\/cover|\/impressions)?$/;
 const notFound = (res: ServerResponse) => json(res, 404, { error: "not_found" });
 const unavailable = (res: ServerResponse) => json(res, 503, { error: "unavailable" });
 
-async function library(req: IncomingMessage, url: URL, res: ServerResponse, store: Store | undefined) {
+async function library(
+  req: IncomingMessage,
+  url: URL,
+  res: ServerResponse,
+  store: Store | undefined,
+  now?: () => Date,
+) {
   if (!store) return unavailable(res);
   const write = WRITE_METHODS.includes(req.method ?? "");
   if (url.pathname === "/api/library") {
@@ -142,7 +148,9 @@ async function library(req: IncomingMessage, url: URL, res: ServerResponse, stor
     if (req.method !== (impressions ? "POST" : "PATCH") || (match[2] && !impressions))
       return json(res, 405, { error: "method_not_allowed" });
     const input = await readBody(req);
-    const result = impressions ? addImpression(store, id, input) : editItem(store, id, input);
+    const result = impressions
+      ? addImpression(store, id, input, now?.())
+      : editItem(store, id, input, now?.());
     if (!result.ok) return answer(res, result);
     // The screen shows the item as it is now, so it needs no second request.
     return json(res, 200, libraryItem(store, id));
@@ -218,7 +226,7 @@ async function route(
       ? json(res, 200, { userId })
       : json(res, 405, { error: "method_not_allowed" });
   if (path === "/api/library" || path.startsWith("/api/library/"))
-    return library(req, url, res, options.store);
+    return library(req, url, res, options.store, options.now);
   if (path === "/api/collections" || path.startsWith("/api/collections/"))
     return collections(req, url, res, options.store);
   if (path === "/api/albums" || path.startsWith("/api/albums/")) return albums(req, url, res, options);

@@ -2,7 +2,7 @@ import { Store, normalizeTags, needsMetadata, aiCurrent } from "./store.ts";
 import { fields, types, statuses, reactions, localDate, localTime, validDate, addDays } from "./fields.ts";
 import type { AI, Suggestion } from "./groq.ts";
 import { createSearch, type Ask } from "./search.ts";
-import { exportVault, type ExportReport } from "./vault.ts";
+import { buildExport, type ExportPackage } from "./export-package.ts";
 import type { Metadata } from "./metadata.ts";
 import type { Transcribe } from "./voice.ts";
 import { findUrl } from "./links.ts";
@@ -25,6 +25,8 @@ export type Out = {
   edit?: { id: number; caption: boolean };
   // Together with edit: change only the inline keyboard.
   markupOnly?: boolean;
+  // Send a file with the text as its caption. Unlike photos there is no fallback to a plain message.
+  document?: { name: string; bytes: Buffer };
   photo?: { path: string; fileId?: string; onUpload?: (fileId: string) => void };
   // Deliver without a notification sound.
   silent?: boolean;
@@ -34,7 +36,7 @@ export type Out = {
 export type Send = (text: string, keyboard?: any, out?: Out) => Promise<number>;
 export type Services = {
   ask?: Ask;
-  export?: () => ExportReport;
+  export?: () => ExportPackage;
   metadata?: (url: string) => Promise<Metadata | null>;
   cover?: (id: string, imageUrl: string) => Promise<string | null>;
   transcribe?: Transcribe;
@@ -269,7 +271,7 @@ export const commands = [
   { command: "later", description: "На потім" },
   { command: "reflect", description: "Без вражень" },
   { command: "ask", description: "Пошук по збереженому" },
-  { command: "export", description: "Оновити Медіатеку в Obsidian" },
+  { command: "export", description: "Нові записи Медіатеки архівом для Obsidian" },
   { command: "review", description: "Підсумок місяця (/review 2026 — року)" },
   { command: "enrich", description: "Дозаповнити старі записи" },
   { command: "cancel", description: "Вийти з діалогу" },
@@ -358,7 +360,7 @@ const help: Record<string, { title: string; text: string }> = {
       "• П'ятниця, 18:00 — тихе повідомлення: скільки збережено за тиждень.\n" +
       "• 1-го числа — підсумок місяця, у січні ще й року. Слайди гортаються ← →.\n" +
       "• /review 2026-10 — будь-який місяць, /review 2026 — рік.\n" +
-      "• «Експорт» — оновити Медіатеку в Obsidian.\n" +
+      "• «Експорт» — надіслати архів із новими нотатками й обкладинками для Obsidian.\n" +
       "• /enrich — дозаповнити старі записи (назви, обкладинки, теги).",
   },
 };
@@ -1155,20 +1157,24 @@ export async function handle(
     else if (text === "Експорт" || cmd === "/export") {
       s.setContext(null);
       try {
-        const r = (services.export ?? (() => exportVault(s, process.env.OBSIDIAN_VAULT_PATH ?? "")))();
-        await send(
-          `Експорт: нових ${r.created}, оновлених ${r.updated}, без змін ${r.unchanged}` +
-            (r.removed ? `, видалених ${r.removed}` : "") +
-            "." +
-            (r.conflicts.length
-              ? "\nПропущено, бо змінено вручну: " + r.conflicts.slice(0, 5).join(", ")
-              : "") +
-            (r.kept?.length
-              ? "\nЗапис видалено, але нотатку з ручними правками залишено: " + r.kept.slice(0, 5).join(", ")
-              : "") +
-            (r.overviewConflict ? "\nМедіатека.md змінено вручну — не перезаписано." : ""),
-          menu,
-        );
+        const pkg = (services.export ?? (() => buildExport(s)))();
+        const shown = (titles: string[]) => titles.slice(0, 5).join(", ") + (titles.length > 5 ? "…" : "");
+        const changes =
+          (pkg.changed.length
+            ? `Змінено після експорту (повторно не надсилаю, записано в базі): ${pkg.changed.length} — ${shown(pkg.changed)}.`
+            : "") +
+          (pkg.deleted.length
+            ? `${pkg.changed.length ? "\n" : ""}Видалено в боті після експорту: ${pkg.deleted.length} — ${shown(pkg.deleted)}.`
+            : "");
+        if (pkg.zip) {
+          const caption =
+            `Експорт: нових нотаток ${pkg.notes}, обкладинок ${pkg.covers}. Розпакуй у vault.` +
+            (pkg.left ? `\nЛишилось ще ${pkg.left} — натисни «Експорт» знову.` : "");
+          await send(caption, menu, { document: { name: pkg.name, bytes: pkg.zip } });
+          // Only a file Telegram has accepted counts as exported.
+          pkg.commit();
+          if (changes) await send(changes, menu);
+        } else await send("Нових записів для експорту немає." + (changes ? "\n" + changes : ""), menu);
       } catch (e) {
         await send(`Експорт не вдався: ${e instanceof Error ? e.message : "невідома помилка"}`, menu);
       }

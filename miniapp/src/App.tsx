@@ -13,6 +13,7 @@ import { Ideas } from "./screens/Ideas.tsx";
 import { Material } from "./screens/Material.tsx";
 import { Media } from "./screens/Media.tsx";
 import { Search } from "./screens/Search.tsx";
+import { Wrap } from "./screens/Wrap.tsx";
 
 const sections: { id: Section; icon: IconName; title: string }[] = [
   { id: "ideas", icon: "ideas", title: "Ідеї" },
@@ -57,6 +58,7 @@ function screenOf(route: Route) {
   if (route.screen === "collection") return <Collection id={route.id} />;
   if (route.screen === "albums") return <Albums />;
   if (route.screen === "album") return <Album period={route.period} />;
+  if (route.screen === "wrap") return <Wrap period={route.period} />;
   if (route.screen === "search") return <Search section={route.section} initial={route.q} />;
   if (route.section === "diary") return <Diary />;
   return route.section === "ideas" ? <Ideas /> : <Media />;

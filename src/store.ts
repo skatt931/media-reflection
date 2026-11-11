@@ -55,7 +55,8 @@ export class Store {
    CREATE TABLE IF NOT EXISTS export_changes(item_id TEXT NOT NULL, kind TEXT NOT NULL, hash TEXT NOT NULL, title TEXT NOT NULL, detected_at TEXT NOT NULL, PRIMARY KEY(item_id,kind,hash));
    CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, item_id TEXT NOT NULL, field TEXT NOT NULL, old TEXT, new TEXT, at TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
-   CREATE TABLE IF NOT EXISTS collection_items(collection_id TEXT NOT NULL, item_id TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY(collection_id,item_id));`);
+   CREATE TABLE IF NOT EXISTS collection_items(collection_id TEXT NOT NULL, item_id TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY(collection_id,item_id));
+   CREATE TABLE IF NOT EXISTS wraps(period TEXT PRIMARY KEY, created_at TEXT NOT NULL, spec TEXT NOT NULL);`);
     if (!this.all("PRAGMA table_info(items)").some((c) => c.name === "details"))
       this.db.exec("ALTER TABLE items ADD COLUMN details TEXT NOT NULL DEFAULT '{}'");
     if (previousVersion < 3) {

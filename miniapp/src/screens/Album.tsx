@@ -7,8 +7,10 @@ import { Icon } from "../icons.tsx";
 import { Cover } from "../library/Cover.tsx";
 import { Mosaic } from "../library/Mosaic.tsx";
 import { BackBar, Bars, Empty, Failed } from "../parts.tsx";
-import { albumHash, albumsHash, entryHash, goBack, materialHash, sectionHash } from "../router.ts";
+import { albumHash, albumsHash, entryHash, goBack, materialHash, sectionHash, wrapHash } from "../router.ts";
 
+// The same threshold as the server's: fewer materials make no wrap.
+const WRAP_MIN = 10;
 const monthWord = (period: string) => monthName(Number(period.slice(5)) - 1);
 const year = (period: string) => period.slice(0, 4);
 
@@ -79,6 +81,12 @@ export function Album({ period }: { period: string }) {
                 .join(" · ")}
             </p>
           </header>
+
+          {counts.saved >= WRAP_MIN && (
+            <a className="go wrapentry" href={wrapHash(period)}>
+              Історія місяця
+            </a>
+          )}
 
           {(data.loved.length > 0 || !data.done) && <Loved album={data} />}
 

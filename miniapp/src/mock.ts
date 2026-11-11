@@ -1,6 +1,7 @@
 // Dev only (see api.ts): invented entries and ideas, answered by the same code as the server.
 // ?mock shows them; ?mock=empty, ?mock=error and ?mock=slow show the other states.
 import type { Album, Shelf } from "../../src/miniapp/album-types.ts";
+import type { Wrap, WrapSpec } from "../../src/miniapp/wrap-types.ts";
 import type { CollectionCard, CollectionView, Tile } from "../../src/miniapp/collection-types.ts";
 import {
   diaryEntry,
@@ -386,6 +387,56 @@ function mockShelf(): Shelf {
   };
 }
 
+// The month's wrap on invented numbers around the invented library; open it at #/media/wrap/<YYYY-MM>.
+const wraps = new Map<string, WrapSpec>();
+function mockWrap(period: string): Wrap | null {
+  const album = mockAlbum(period);
+  if (!album) return null;
+  const items = library.filter((m) => m.date.startsWith(period));
+  const tags = new Map<string, number>();
+  for (const m of items) for (const t of m.tags) tags.set(t, (tags.get(t) ?? 0) + 1);
+  const topics = [...tags].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const named = items[0]?.title ?? "Yol";
+  return {
+    facts: {
+      period,
+      saved: 34,
+      previous: 27,
+      topType: { label: "Відео", n: 12 },
+      loved: album.loved,
+      latest: items.slice(0, 6).map(tileOf),
+      topics: topics.length >= 2 ? topics : [["музика", 6], ["дизайн", 4], ["осінь", 3]],
+      authors: [["Altin Gün", 3], ["Нічний двір", 2]],
+      rhythm: [
+        [1, 0, 1, 0, 2, 3, 2],
+        [2, 1, 1, 2, 1, 4, 3],
+        [3, 2, 4, 2, 3, 5, 8],
+        [0, 2, 0, 1, 0, 1, 1],
+      ],
+      peak: "неділя ввечері",
+      late: "01:12 у суботу",
+      facts: [
+        {
+          id: "repeat:m2",
+          n: 3,
+          unit: ["раз", "рази", "разів"],
+          rest: `ти зберіг «${named}»`,
+          detail: "Перший раз на початку місяця, востаннє позавчора.",
+        },
+        {
+          id: "streak",
+          n: 9,
+          unit: ["день", "дні", "днів"],
+          rest: "поспіль ти щось зберігав",
+          detail: "Найдовша серія цього року.",
+        },
+      ],
+      quotes: album.quotes.slice(0, 5),
+    },
+    spec: wraps.get(period) ?? null,
+  };
+}
+
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 export async function mockGet<T>(path: string): Promise<T> {
@@ -409,6 +460,7 @@ export async function mockGet<T>(path: string): Promise<T> {
     body = found && setView(found);
   } else if (url.pathname === "/api/albums") body = mockShelf();
   else if (url.pathname.startsWith("/api/albums/")) body = mockAlbum(url.pathname.slice(12));
+  else if (url.pathname.startsWith("/api/wraps/")) body = mockWrap(url.pathname.slice(11));
   else if (url.pathname.startsWith("/api/library/"))
     body = library.find((m) => m.id === decodeURIComponent(url.pathname.slice(13)));
   if (!body) throw new ApiError(404);
@@ -466,6 +518,21 @@ export async function mockSend<T>(method: string, path: string, body: unknown): 
     if (!coll[2]) found.name = String(input.name).trim();
     inSets();
     return setView(found) as T;
+  }
+  const wrap = /^\/api\/wraps\/(\d{4}-\d{2})(\/photos)?$/.exec(url.pathname);
+  if (wrap) {
+    if (wrap[2]) return { sent: (input.images as unknown[]).length } as T;
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    wraps.set(wrap[1], {
+      seed,
+      createdAt: now.toISOString(),
+      mood: "Місяць повільних речей",
+      moodLine: "Довгі відео й тиха музика витіснили статті. Ти частіше дивився, ніж читав.",
+      numberLine: "Другий тиждень вийшов найщільнішим: 18 збережень за сім днів.",
+      factId: seed % 2 ? "streak" : "repeat:m2",
+      factLine: "Схоже, до цього ти повертаєшся, коли хочеш подумати.",
+    });
+    return mockWrap(wrap[1]) as T;
   }
   const item = /^\/api\/library\/([^/]+?)(\/impressions)?$/.exec(url.pathname);
   const material = item && library.find((m) => m.id === decodeURIComponent(item[1]));

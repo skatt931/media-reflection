@@ -41,7 +41,7 @@ export function firstSentence(text: string, max: number) {
 
 const monthOf = (iso: string) => localDate(new Date(iso)).slice(0, 7);
 
-function tileOf(s: Store, item: Row): Tile {
+export function tileOf(s: Store, item: Row): Tile {
   return { id: item.id, title: item.title, cover: s.coverPath(item) !== null };
 }
 

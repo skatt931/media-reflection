@@ -5,6 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import type { JournalStore } from "../journal.ts";
 import type { Store } from "../store.ts";
 import { localDate } from "../fields.ts";
+import type { JSONRequest } from "../groq.ts";
 import { checkInitData } from "./auth.ts";
 import { albumOf, shelfOf } from "./album.ts";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./collections.ts";
 import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
 import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
+import { generateWrap, WRAP_BODY_MAX, wrapOf, wrapPhotos } from "./wrap.ts";
 import {
   addDiaryEntry,
   addIdea,
@@ -42,6 +44,10 @@ export type MiniAppOptions = {
   store?: Store;
   staticDir?: string;
   now?: () => Date;
+  // Groq for the wrap's lines; without it the wrap is made by plain rules.
+  request?: JSONRequest;
+  // Sends the wrap's cards to the owner's chat, so they can be saved to Photos. Without it: 503.
+  sendPhotos?: (photos: Buffer[]) => Promise<void>;
 };
 
 const TYPES: Record<string, string> = {
@@ -99,14 +105,14 @@ class Refused extends Error {
 
 // A JSON body of bounded size. Runs only after initData was verified, so only the owner can make the server read.
 // An oversized body is still read to the end (and dropped), so the client gets its 413 instead of a broken connection.
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, max = MAX_BODY): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size <= MAX_BODY) chunks.push(chunk as Buffer);
+    if (size <= max) chunks.push(chunk as Buffer);
   }
-  if (size > MAX_BODY) throw new Refused(413);
+  if (size > max) throw new Refused(413);
   if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) throw new Refused(415);
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -212,6 +218,41 @@ async function albums(req: IncomingMessage, url: URL, res: ServerResponse, optio
   return album ? json(res, 200, album) : notFound(res);
 }
 
+const WRAP = /^\/api\/wraps\/(\d{4}-(?:0[1-9]|1[0-2]))(\/photos)?$/;
+
+async function wraps(req: IncomingMessage, url: URL, res: ServerResponse, options: MiniAppOptions) {
+  const store = options.store;
+  if (!store) return unavailable(res);
+  const match = WRAP.exec(url.pathname);
+  if (!match) return notFound(res);
+  const [, period, photos] = match;
+  const today = options.now ? localDate(options.now()) : undefined;
+  const method = req.method ?? "GET";
+  if (photos) {
+    if (method !== "POST") return json(res, 405, { error: "method_not_allowed" });
+    if (!options.sendPhotos) return unavailable(res);
+    if (!wrapOf(store, period, today)) return notFound(res);
+    const checked = wrapPhotos(await readBody(req, WRAP_BODY_MAX));
+    if (!checked.ok) return answer(res, checked);
+    try {
+      await options.sendPhotos(checked.value);
+    } catch (e) {
+      // Telegram refused or was unreachable; the cards stay on the screen and can be sent again.
+      // Only the code goes to the log, never what was sent.
+      console.error(`Wrap photos: ${(e as { code?: number }).code ?? "error"}`);
+      return json(res, 502, { error: "not_sent" });
+    }
+    return json(res, 200, { sent: checked.value.length });
+  }
+  if (method === "POST") {
+    const made = await generateWrap(store, period, options.request, today, options.now?.());
+    return made ? json(res, 200, made) : notFound(res);
+  }
+  if (method !== "GET" && method !== "HEAD") return json(res, 405, { error: "method_not_allowed" });
+  const wrap = wrapOf(store, period, today);
+  return wrap ? json(res, 200, wrap) : notFound(res);
+}
+
 // Every route gets here only after initData was verified.
 async function route(
   req: IncomingMessage,
@@ -230,6 +271,7 @@ async function route(
   if (path === "/api/collections" || path.startsWith("/api/collections/"))
     return collections(req, url, res, options.store);
   if (path === "/api/albums" || path.startsWith("/api/albums/")) return albums(req, url, res, options);
+  if (path.startsWith("/api/wraps/")) return wraps(req, url, res, options);
   const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
   const idea = /^\/api\/ideas\/(\d{1,15})\/(resolve|restore|delete)$/.exec(path);
   if (path !== "/api/diary" && path !== "/api/ideas" && !diary && !idea) return notFound(res);

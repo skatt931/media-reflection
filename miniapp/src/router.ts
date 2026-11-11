@@ -9,10 +9,11 @@ export type Route =
   | { screen: "collection"; section: "media"; id: string }
   | { screen: "albums"; section: "media" }
   | { screen: "album"; section: "media"; period: string }
+  | { screen: "wrap"; section: "media"; period: string }
   | { screen: "search"; section: "diary" | "ideas"; q: string };
 
 // #/diary, #/diary/new, #/diary/42, #/diary/search?q=слово, #/ideas, #/ideas/search?q=слово, #/media, #/media/<id>,
-// #/media/collection/<id>, #/media/albums, #/media/album/2026-11
+// #/media/collection/<id>, #/media/albums, #/media/album/2026-11, #/media/wrap/2026-11
 export function parse(hash: string): Route {
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?");
   const [section, rest, third] = path.split("/");
@@ -21,6 +22,7 @@ export function parse(hash: string): Route {
       if (rest === "albums") return { screen: "albums", section };
       if (rest === "album" && /^\d{4}-\d{2}$/.test(third ?? ""))
         return { screen: "album", section, period: third };
+      if (rest === "wrap" && /^\d{4}-\d{2}$/.test(third ?? "")) return { screen: "wrap", section, period: third };
       if (rest === "collection" && third)
         return { screen: "collection", section, id: decodeURIComponent(third) };
       return rest
@@ -48,6 +50,7 @@ export const materialHash = (id: string) => `#/media/${encodeURIComponent(id)}`;
 export const collectionHash = (id: string) => `#/media/collection/${encodeURIComponent(id)}`;
 export const albumsHash = "#/media/albums";
 export const albumHash = (period: string) => `#/media/album/${period}`;
+export const wrapHash = (period: string) => `#/media/wrap/${period}`;
 export const sectionHash = (section: Section) => `#/${section}`;
 
 // The order of the tabs: swiping goes along it.
@@ -69,6 +72,8 @@ export function hashOf(route: Route): string {
       return albumsHash;
     case "album":
       return albumHash(route.period);
+    case "wrap":
+      return wrapHash(route.period);
     case "search":
       return searchHash(route.section, route.q);
   }
@@ -81,7 +86,7 @@ export const scrollKey = (route: Route) =>
 // How deep a screen lies: moving to a deeper one slides in, to a shallower one slides out.
 // A material is the deepest of the library, since it opens from a list, a collection or an album; a diary
 // entry is deeper than the album that links to it.
-const DEPTH: Partial<Record<Route["screen"], number>> = { list: 0, album: 2, entry: 3, material: 3 };
+const DEPTH: Partial<Record<Route["screen"], number>> = { list: 0, album: 2, wrap: 3, entry: 3, material: 3 };
 export const depth = (route: Route) => DEPTH[route.screen] ?? 1;
 
 // The screens before this one, as the browser's history holds them: a swipe back has to show the screen

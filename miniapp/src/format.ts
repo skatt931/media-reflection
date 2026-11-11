@@ -51,6 +51,8 @@ export function parts(iso: string) {
 }
 
 export const monthName = (month: number) => months[month];
+// «листопада»: of the month, as in «Історія листопада».
+export const monthNameOf = (month: number) => monthsOf[month];
 export const weekdayShort = (iso: string) => weekdaysShort[parts(iso).weekday];
 export const weekdayFull = (iso: string) => weekdays[parts(iso).weekday];
 

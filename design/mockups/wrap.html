@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monthly wrap: шаблони карток</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  :root { --board: #e9e9e6; --board-ink: #17181a; --board-muted: #5d6166; --board-chip: #dcdcd8; --board-chip-on: #ffffff; --ink: #17181a; }
+  .issue { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--board-chip); flex: none; }
+  .issue button { padding: 7px 14px; border-radius: 7px; color: var(--board-muted); }
+  .issue button[aria-pressed="true"] { background: var(--board-chip-on); color: var(--board-ink); }
+  .skipped { padding: 0 40px; min-height: 1.4em; color: var(--board-muted); }
+  .card { width: 360px; height: 640px; overflow: hidden; border-radius: 18px; }
+  .card svg { display: block; width: 100%; height: 100%; }
+  .board figcaption button { margin-left: 8px; padding: 3px 10px; border-radius: 6px; background: var(--board-chip); color: var(--board-ink); font-size: 13px; }
+  .board figcaption button:focus-visible, .issue button:focus-visible { outline: 2px solid #1d5a46; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header class="board-head">
+  <div>
+    <h1>Monthly wrap: сім карток 9:16</h1>
+    <p>Вигадані дані. Листопад і жовтень показують, як змінюються палітра (з кольорів обкладинок) і розкладка (seed); «Гірші дані» — довгі назви, один улюблений, замало для ритму. Серифом — лише твій текст, AI-рядки позначені маленьким «AI». «JPEG» збирає картку так, як це робитиме Mini App.</p>
+  </div>
+  <div class="issue" role="group" aria-label="Випуск">
+    <button type="button" data-issue="nov" aria-pressed="true">Листопад</button>
+    <button type="button" data-issue="oct" aria-pressed="false">Жовтень</button>
+    <button type="button" data-issue="edge" aria-pressed="false">Гірші дані</button>
+  </div>
+</header>
+<p class="skipped" id="skipped"></p>
+<main class="board" id="cards"></main>
+<script src="wrap.js"></script>
+</body>
+</html>

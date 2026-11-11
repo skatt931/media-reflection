@@ -6,6 +6,7 @@ import { createRuntime } from "./runtime.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Server } from "node:http";
 import { miniAppPort, startMiniApp } from "./miniapp/server.ts";
+import { createJSONRequest } from "./groq.ts";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const owner = Number(process.env.TELEGRAM_USER_ID);
@@ -91,6 +92,24 @@ async function sendDocument(text: string, keyboard: unknown, out: NonNullable<Pa
   return api("sendDocument", form);
 }
 
+// The wrap's cards, as one album without a sound. Telegram shows an album of 2–10; a single card is a photo.
+async function sendPhotos(photos: Buffer[]) {
+  const form = new FormData();
+  form.append("chat_id", String(owner));
+  form.append("disable_notification", "true");
+  if (photos.length === 1) {
+    form.append("photo", new Blob([new Uint8Array(photos[0])], { type: "image/jpeg" }), "wrap.jpg");
+    await api("sendPhoto", form);
+    return;
+  }
+  const media = photos.map((_, i) => ({ type: "photo", media: `attach://card${i}` }));
+  form.append("media", JSON.stringify(media));
+  photos.forEach((photo, i) =>
+    form.append(`card${i}`, new Blob([new Uint8Array(photo)], { type: "image/jpeg" }), `wrap-${i + 1}.jpg`),
+  );
+  await api("sendMediaGroup", form);
+}
+
 const send: Send = async (text, keyboard, out = {}) => {
   if (out.react) {
     try {
@@ -142,7 +161,18 @@ const send: Send = async (text, keyboard, out = {}) => {
 async function openMiniApp() {
   try {
     const port = miniAppPort(process.env.MINIAPP_PORT);
-    if (port) miniApp = await startMiniApp({ token: token!, owner, store, journal }, port);
+    if (port)
+      miniApp = await startMiniApp(
+        {
+          token: token!,
+          owner,
+          store,
+          journal,
+          request: createJSONRequest(process.env.GROQ_API_KEY, process.env.GROQ_MODEL),
+          sendPhotos,
+        },
+        port,
+      );
   } catch (e) {
     console.error(e instanceof Error ? e.message : "Mini App не запущено.");
   }

@@ -81,6 +81,7 @@ export function plural(n: number, one: string, few: string, many: string) {
   return last >= 2 && last <= 4 && (lastTwo < 10 || lastTwo >= 20) ? few : many;
 }
 export const records = (n: number) => `${n} ${plural(n, "запис", "записи", "записів")}`;
+export const daysLabel = (n: number) => `${n} ${plural(n, "день", "дні", "днів")}`;
 export const wordsLabel = (n: number) => `${n} ${plural(n, "слово", "слова", "слів")}`;
 export const ideasLabel = (n: number) => `${n} ${plural(n, "ідея", "ідеї", "ідей")}`;
 export const materialsLabel = (n: number) => `${n} ${plural(n, "матеріал", "матеріали", "матеріалів")}`;

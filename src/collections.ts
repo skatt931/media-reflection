@@ -13,7 +13,11 @@ export type Named = { ok: true; id: string } | { ok: false; error: "name" | "exi
 
 export function cleanName(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const name = value.replace(/\s+/g, " ").trim();
+  // Zero-width and bidi control characters are dropped: they make two names look the same and differ.
+  const name = value
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   return name && name.length <= MAX_NAME ? name : null;
 }
 

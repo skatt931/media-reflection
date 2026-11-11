@@ -17,6 +17,16 @@ import {
   removeCollection,
   takeOutOfCollection,
 } from "./collections.ts";
+import {
+  addCounter,
+  hideDiary,
+  markCounter,
+  readCounter,
+  readCounters,
+  removeCounter,
+  renameCounter,
+  unmarkCounter,
+} from "./counters.ts";
 import { diaryEntry, diaryList, ideaList, type DiaryRow, type IdeaRow } from "./data.ts";
 import { libraryCover, libraryFilter, libraryItem, libraryList } from "./library.ts";
 import { generateWrap, WRAP_BODY_MAX, wrapOf, wrapPhotos } from "./wrap.ts";
@@ -218,6 +228,40 @@ async function albums(req: IncomingMessage, url: URL, res: ServerResponse, optio
   return album ? json(res, 200, album) : notFound(res);
 }
 
+const COUNTER = /^\/api\/counters\/(\d{1,15}|diary)(?:\/(mark|unmark|delete|hidden))?$/;
+
+async function counters(req: IncomingMessage, url: URL, res: ServerResponse, options: MiniAppOptions) {
+  const journal = options.journal;
+  if (!journal) return unavailable(res);
+  const method = req.method ?? "GET";
+  const reads = method === "GET" || method === "HEAD";
+  const now = options.now?.();
+  const refuse = () => json(res, 405, { error: "method_not_allowed" });
+  if (url.pathname === "/api/counters") {
+    if (reads) return json(res, 200, readCounters(journal, now));
+    return method === "POST" ? answer(res, addCounter(journal, await readBody(req), now), 201) : refuse();
+  }
+  const match = COUNTER.exec(url.pathname);
+  if (!match) return notFound(res);
+  const [, id, action] = match;
+  // The diary is shown, never marked, renamed or deleted: the only thing to do with it is to hide it.
+  if (id === "diary" ? action && action !== "hidden" : action === "hidden") return notFound(res);
+  if (!action) {
+    if (method === "PATCH") return answer(res, renameCounter(journal, id, await readBody(req), now));
+    if (!reads) return refuse();
+    const detail = readCounter(journal, id, now);
+    return detail ? json(res, 200, detail) : notFound(res);
+  }
+  if (method !== "POST") return refuse();
+  if (action === "delete") return answer(res, removeCounter(journal, id));
+  const input = await readBody(req);
+  if (action === "hidden") return answer(res, hideDiary(journal, input, now));
+  return answer(
+    res,
+    action === "mark" ? markCounter(journal, id, input, now) : unmarkCounter(journal, id, input, now),
+  );
+}
+
 const WRAP = /^\/api\/wraps\/(\d{4}-(?:0[1-9]|1[0-2]))(\/photos)?$/;
 
 async function wraps(req: IncomingMessage, url: URL, res: ServerResponse, options: MiniAppOptions) {
@@ -271,6 +315,7 @@ async function route(
   if (path === "/api/collections" || path.startsWith("/api/collections/"))
     return collections(req, url, res, options.store);
   if (path === "/api/albums" || path.startsWith("/api/albums/")) return albums(req, url, res, options);
+  if (path === "/api/counters" || path.startsWith("/api/counters/")) return counters(req, url, res, options);
   if (path.startsWith("/api/wraps/")) return wraps(req, url, res, options);
   const diary = /^\/api\/diary\/(\d{1,15})$/.exec(path);
   const idea = /^\/api\/ideas\/(\d{1,15})\/(resolve|restore|delete)$/.exec(path);

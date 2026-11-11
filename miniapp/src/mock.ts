@@ -11,6 +11,14 @@ import {
   type DiaryRow,
   type IdeaRow,
 } from "../../src/miniapp/data.ts";
+import {
+  DIARY_ID,
+  DIARY_NAME,
+  counterDetail,
+  counterList,
+  type CounterRow,
+  type MarkRow,
+} from "../../src/miniapp/counter-data.ts";
 import type { LibraryCard, LibraryItem, LibraryList } from "../../src/miniapp/library-types.ts";
 import { stems } from "../../src/words.ts";
 import { NO_REACTION } from "../../src/miniapp/library-types.ts";
@@ -405,8 +413,18 @@ function mockWrap(period: string): Wrap | null {
       topType: { label: "Відео", n: 12 },
       loved: album.loved,
       latest: items.slice(0, 6).map(tileOf),
-      topics: topics.length >= 2 ? topics : [["музика", 6], ["дизайн", 4], ["осінь", 3]],
-      authors: [["Altin Gün", 3], ["Нічний двір", 2]],
+      topics:
+        topics.length >= 2
+          ? topics
+          : [
+              ["музика", 6],
+              ["дизайн", 4],
+              ["осінь", 3],
+            ],
+      authors: [
+        ["Altin Gün", 3],
+        ["Нічний двір", 2],
+      ],
       rhythm: [
         [1, 0, 1, 0, 2, 3, 2],
         [2, 1, 1, 2, 1, 4, 3],
@@ -437,6 +455,38 @@ function mockWrap(period: string): Wrap | null {
   };
 }
 
+// Counters: two of the first kind, one of the second, and the diary counted from the newest entry above.
+let counterRows: CounterRow[] = [
+  { id: 1, name: "Подзвонити мамі", kind: "done", started_on: daysAgo(40) },
+  { id: 2, name: "Поприбирати вдома", kind: "done", started_on: daysAgo(30) },
+  { id: 3, name: "Не курю", kind: "keep", started_on: daysAgo(80) },
+];
+let counterMarks: MarkRow[] = [
+  { counter_id: 1, mark_date: daysAgo(12) },
+  { counter_id: 1, mark_date: daysAgo(26) },
+  { counter_id: 2, mark_date: daysAgo(5) },
+  { counter_id: 3, mark_date: daysAgo(34) },
+];
+let diaryHidden = false;
+const counterToday = () => daysAgo(0);
+const diaryState = () => ({
+  last: diary.length
+    ? diary
+        .map((d) => d.entry_date)
+        .sort()
+        .at(-1)!
+    : null,
+  hidden: diaryHidden,
+});
+const counterView = (id: string) =>
+  counterDetail(
+    mode === "empty" ? [] : counterRows,
+    counterMarks,
+    mode === "empty" ? { last: null, hidden: false } : diaryState(),
+    id,
+    counterToday(),
+  );
+
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 export async function mockGet<T>(path: string): Promise<T> {
@@ -452,6 +502,15 @@ export async function mockGet<T>(path: string): Promise<T> {
   else if (url.pathname === "/api/diary") body = diaryList(rows, q);
   else if (entry) body = diaryEntry(rows, Number(entry[1]));
   else if (url.pathname === "/api/ideas") body = ideaList(quick, q);
+  else if (url.pathname === "/api/counters")
+    body = counterList(
+      mode === "empty" ? [] : counterRows,
+      counterMarks,
+      mode === "empty" ? { last: null, hidden: false } : diaryState(),
+      counterToday(),
+    );
+  else if (url.pathname.startsWith("/api/counters/"))
+    body = counterView(decodeURIComponent(url.pathname.slice(14)));
   else if (url.pathname === "/api/library") body = mockLibrary(url);
   else if (url.pathname === "/api/collections")
     body = { collections: (mode === "empty" ? [] : sets).map(setCard) };
@@ -478,6 +537,48 @@ export async function mockSend<T>(method: string, path: string, body: unknown): 
     const id = Math.max(0, ...diary.map((d) => d.id)) + 1;
     diary.push({ id, entry_date: input.date, body: input.body.trim() });
     return { id } as T;
+  }
+  if (url.pathname === "/api/counters") {
+    const name = String(input.name ?? "").trim();
+    if (!name || !["done", "keep"].includes(input.kind) || name.toLowerCase() === DIARY_NAME.toLowerCase())
+      throw new ApiError(400);
+    if (counterRows.some((c) => c.name.toLowerCase() === name.toLowerCase())) throw new ApiError(400);
+    const id = Math.max(0, ...counterRows.map((c) => c.id)) + 1;
+    counterRows.push({ id, name, kind: input.kind, started_on: input.since ?? counterToday() });
+    return { id } as T;
+  }
+  const counter = /^\/api\/counters\/(\d+|diary)(?:\/(mark|unmark|delete|hidden))?$/.exec(url.pathname);
+  if (counter) {
+    const [, id, action] = counter;
+    if (id === DIARY_ID) {
+      diaryHidden = Boolean(input.hidden);
+      return counterView(DIARY_ID) as T;
+    }
+    const row = counterRows.find((c) => String(c.id) === id);
+    if (!row) throw new ApiError(404);
+    if (action === "delete") {
+      counterRows = counterRows.filter((c) => c !== row);
+      counterMarks = counterMarks.filter((m) => m.counter_id !== row.id);
+      return true as T;
+    }
+    if (!action) {
+      const name = String(input.name ?? "").trim();
+      if (!name || counterRows.some((c) => c !== row && c.name.toLowerCase() === name.toLowerCase()))
+        throw new ApiError(400);
+      row.name = name;
+    } else if (action === "mark") {
+      const today = counterToday();
+      const yesterday = daysAgo(1);
+      const allowed = row.kind === "done" ? [today, yesterday] : [today];
+      if (!allowed.includes(input.date)) throw new ApiError(400);
+      if (!counterMarks.some((m) => m.counter_id === row.id && m.mark_date === input.date))
+        counterMarks.push({ counter_id: row.id, mark_date: input.date });
+    } else {
+      const before = counterMarks.length;
+      counterMarks = counterMarks.filter((m) => !(m.counter_id === row.id && m.mark_date === input.date));
+      if (counterMarks.length === before) throw new ApiError(404);
+    }
+    return counterView(id) as T;
   }
   if (url.pathname === "/api/ideas") {
     const id = Math.max(0, ...ideas.map((d) => d.id)) + 1;

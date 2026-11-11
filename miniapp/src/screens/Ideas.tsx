@@ -6,6 +6,7 @@ import { useAction, useResource, useScrollMemory } from "../hooks.ts";
 import { Icon } from "../icons.tsx";
 import { Bars, Empty, Failed, Marked, Problem, UndoBar } from "../parts.tsx";
 import { searchHash } from "../router.ts";
+import { Counters } from "./Counters.tsx";
 import { TextSheet } from "./TextSheet.tsx";
 
 export const IDEA_LIMIT = 4_000;
@@ -185,6 +186,7 @@ export function Ideas() {
           </button>
         </div>
       </header>
+      <Counters />
       {action.failed && <Problem>Не вдалося зберегти зміну. Спробуй ще раз.</Problem>}
       {ideas ? (
         <>

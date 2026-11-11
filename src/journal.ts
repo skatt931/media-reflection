@@ -61,6 +61,27 @@ const migrations = [
 ];
 export const journalSchemaVersion = migrations.length;
 
+// The counters of the Mini App (#50) are plain tables outside `user_version`, like the collections: an older
+// build still opens the file after a rolled-back deploy, and dropping the three tables removes the feature.
+// `kind` is «done» or «keep»; `counter_marks` holds the dates of a «done» counter's marks and of a «keep»
+// counter's lapses; `counter_prefs` holds the one setting (the diary counter hidden). An id is never reused,
+// so a screen that still shows a deleted counter cannot mark a new one that took its place.
+const counterTables = `
+  CREATE TABLE IF NOT EXISTS counters(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('done','keep')),
+    started_on TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS counter_marks(
+    counter_id INTEGER NOT NULL,
+    mark_date TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(counter_id, mark_date)
+  );
+  CREATE TABLE IF NOT EXISTS counter_prefs(key TEXT PRIMARY KEY, value TEXT NOT NULL);`;
+
 export const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 
 function calendarDate(year: number, month: number, day: number) {
@@ -105,6 +126,7 @@ export class JournalStore {
         this.db.exec(`PRAGMA user_version=${next + 1}`);
       });
     }
+    this.db.exec(counterTables);
   }
   all(sql: string, ...args: any[]): Row[] {
     return this.db.prepare(sql).all(...args) as Row[];

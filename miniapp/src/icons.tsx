@@ -50,6 +50,7 @@ const paths = {
       <path d="m8 12.4 2.7 2.7L16 9.6" />
     </>
   ),
+  tick: <path d="m5.5 12.5 4.2 4.2L18.5 7.8" />,
   trash: <path d="M4 7h16M10 11v6m4-6v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3" />,
   undo: <path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
